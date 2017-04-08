@@ -1,30 +1,26 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.mysql.model;
 
 import org.eclipse.core.runtime.IAdaptable;
-import org.eclipse.core.runtime.IProduct;
-import org.eclipse.core.runtime.Platform;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.ext.mysql.MySQLConstants;
 import org.jkiss.dbeaver.ext.mysql.MySQLDataSourceProvider;
 import org.jkiss.dbeaver.ext.mysql.MySQLUtils;
@@ -32,12 +28,16 @@ import org.jkiss.dbeaver.ext.mysql.model.plan.MySQLPlanAnalyser;
 import org.jkiss.dbeaver.ext.mysql.model.session.MySQLSessionManager;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DBPErrorAssistant;
-import org.jkiss.dbeaver.model.app.DBACertificateStorage;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.admin.sessions.DBAServerSessionManager;
+import org.jkiss.dbeaver.model.app.DBACertificateStorage;
 import org.jkiss.dbeaver.model.exec.*;
-import org.jkiss.dbeaver.model.exec.jdbc.*;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.exec.plan.DBCPlan;
+import org.jkiss.dbeaver.model.exec.plan.DBCPlanStyle;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
@@ -47,13 +47,14 @@ import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
 import org.jkiss.dbeaver.model.impl.sql.QueryTransformerLimit;
 import org.jkiss.dbeaver.model.net.DBWHandlerConfiguration;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.sql.SQLDialect;
+import org.jkiss.dbeaver.model.sql.SQLHelpProvider;
+import org.jkiss.dbeaver.model.sql.SQLState;
 import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.utils.CommonUtils;
+import org.jkiss.utils.IOUtils;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
@@ -75,16 +76,17 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
     private List<MySQLCharset> charsets;
     private Map<String, MySQLCollation> collations;
     private String activeCatalogName;
+    private SQLHelpProvider helpProvider;
 
     public MySQLDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container)
         throws DBException
     {
-        super(monitor, container);
+        super(monitor, container, new MySQLDialect());
         dataTypeCache = new JDBCBasicDataTypeCache(container);
     }
 
     @Override
-    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor)
+    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor, String purpose)
         throws DBCException
     {
         Map<String, String> props = new LinkedHashMap<>(MySQLDataSourceProvider.getConnectionsProps());
@@ -117,32 +119,27 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
         props.put("requireSSL", String.valueOf(CommonUtils.toBoolean(sslConfig.getProperties().get(MySQLConstants.PROP_REQUIRE_SSL))));
 
         final String caCertProp = sslConfig.getProperties().get(MySQLConstants.PROP_SSL_CA_CERT);
-
-        // Trust keystore
-        String ksId = "ssl-truststore";
-        if (!CommonUtils.isEmpty(caCertProp)) {
-            File caCertFile = new File(caCertProp);
-            try (InputStream is = new FileInputStream(caCertFile)) {
-                securityManager.addCertificate(ksId, getContainer().getId(), is);
-            }
-        } else {
-            securityManager.deleteCertificate(ksId, getContainer().getId());
-        }
-        props.put("trustCertificateKeyStoreUrl", securityManager.getKeyStorePath(ksId).toURI().toURL().toString());
-
-        // Client certificate
-        ksId = "ssl-clientstore";
         final String clientCertProp = sslConfig.getProperties().get(MySQLConstants.PROP_SSL_CLIENT_CERT);
-        if (!CommonUtils.isEmpty(clientCertProp)) {
-            File clientCertFile = new File(clientCertProp);
-            try (InputStream is = new FileInputStream(clientCertFile)) {
-                securityManager.addCertificate(ksId, getContainer().getId(), is);
-            }
-        } else {
-            securityManager.deleteCertificate(ksId, getContainer().getId());
-        }
-        props.put("clientCertificateKeyStoreUrl", securityManager.getKeyStorePath(ksId).toURI().toURL().toString());
+        final String clientCertKeyProp = sslConfig.getProperties().get(MySQLConstants.PROP_SSL_CLIENT_KEY);
 
+        {
+            // Trust keystore
+            if (!CommonUtils.isEmpty(caCertProp) || !CommonUtils.isEmpty(clientCertProp)) {
+                byte[] caCertData = CommonUtils.isEmpty(caCertProp) ? null : IOUtils.readFileToBuffer(new File(caCertProp));
+                byte[] clientCertData = CommonUtils.isEmpty(clientCertProp) ? null : IOUtils.readFileToBuffer(new File(clientCertProp));
+                byte[] keyData = CommonUtils.isEmpty(clientCertKeyProp) ? null : IOUtils.readFileToBuffer(new File(clientCertKeyProp));
+                securityManager.addCertificate(getContainer(), "ssl", caCertData, clientCertData, keyData);
+            } else {
+                securityManager.deleteCertificate(getContainer(), "ssl");
+            }
+            final String ksPath = makeKeyStorePath(securityManager.getKeyStorePath(getContainer(), "ssl"));
+            props.put("clientCertificateKeyStoreUrl", ksPath);
+            props.put("trustCertificateKeyStoreUrl", ksPath);
+        }
+        final String cipherSuites = sslConfig.getProperties().get(MySQLConstants.PROP_SSL_CIPHER_SUITES);
+        if (!CommonUtils.isEmpty(cipherSuites)) {
+            props.put("enabledSSLCipherSuites;", cipherSuites);
+        }
         final boolean retrievePublicKey = CommonUtils.getBoolean(sslConfig.getProperties().get(MySQLConstants.PROP_SSL_PUBLIC_KEY_RETRIEVE), false);
         if (retrievePublicKey) {
             props.put("allowPublicKeyRetrieval", "true");
@@ -153,6 +150,14 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
         }
     }
 
+    private String makeKeyStorePath(File keyStorePath) throws MalformedURLException {
+        if (isMariaDB()) {
+            return keyStorePath.getAbsolutePath();
+        } else {
+            return keyStorePath.toURI().toURL().toString();
+        }
+    }
+
     protected void initializeContextState(@NotNull DBRProgressMonitor monitor, @NotNull JDBCExecutionContext context, boolean setActiveObject) throws DBCException {
         if (setActiveObject) {
             MySQLCatalog object = getDefaultObject();
@@ -160,11 +165,6 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
                 useDatabase(monitor, context, object);
             }
         }
-    }
-
-    @Override
-    protected SQLDialect createSQLDialect(@NotNull JDBCDatabaseMetaData metaData) {
-        return new MySQLDialect(metaData);
     }
 
     public String[] getTableTypes()
@@ -319,7 +319,7 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
     @Override
     public MySQLCatalog getDefaultObject()
     {
-        return getCatalog(activeCatalogName);
+        return CommonUtils.isEmpty(activeCatalogName) ? null : getCatalog(activeCatalogName);
     }
 
     @Override
@@ -377,21 +377,16 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
 
         {
             // Provide client info
-            IProduct product = Platform.getProduct();
-            if (product != null) {
-                String appName = DBeaverCore.getProductTitle();
-                try {
-                    mysqlConnection.setClientInfo("ApplicationName", appName + " - " + purpose);
-                } catch (Throwable e) {
-                    // just ignore
-                    log.debug(e);
-                }
+            try {
+                mysqlConnection.setClientInfo("ApplicationName", DBUtils.getClientApplicationName(getContainer(), purpose));
+            } catch (Throwable e) {
+                // just ignore
+                log.debug(e);
             }
         }
 
         return mysqlConnection;
     }
-
 
     public List<MySQLUser> getUsers(DBRProgressMonitor monitor)
         throws DBException
@@ -576,12 +571,19 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
         return super.createQueryTransformer(type);
     }
 
+    @NotNull
     @Override
-    public DBCPlan planQueryExecution(DBCSession session, String query) throws DBCException
+    public DBCPlan planQueryExecution(@NotNull DBCSession session, @NotNull String query) throws DBCException
     {
         MySQLPlanAnalyser plan = new MySQLPlanAnalyser(this, query);
         plan.explain(session);
         return plan;
+    }
+
+    @NotNull
+    @Override
+    public DBCPlanStyle getPlanStyle() {
+        return DBCPlanStyle.PLAN;
     }
 
     @Override
@@ -589,6 +591,11 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
     {
         if (adapter == DBSStructureAssistant.class) {
             return adapter.cast(new MySQLStructureAssistant(this));
+        } else if (adapter == SQLHelpProvider.class) {
+            if (helpProvider == null) {
+                helpProvider = new MySQLHelpProvider(this);
+            }
+            return adapter.cast(helpProvider);
         } else if (adapter == DBAServerSessionManager.class) {
             return adapter.cast(new MySQLSessionManager(this));
         }
@@ -644,11 +651,11 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
     }
 
     @Override
-    public ErrorType discoverErrorType(@NotNull DBException error)
+    public ErrorType discoverErrorType(@NotNull Throwable error)
     {
         if (isMariaDB()) {
             // MariaDB-specific. They have bad SQLState support
-            if ("08".equals(error.getDatabaseState())) {
+            if ("08".equals(SQLState.getStateFromException(error))) {
                 return ErrorType.CONNECTION_LOST;
             }
         }
@@ -659,7 +666,7 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
 
     @Nullable
     @Override
-    public ErrorPosition[] getErrorPosition(@NotNull DBCSession session, @NotNull String query, @NotNull Throwable error) {
+    public ErrorPosition[] getErrorPosition(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext context, @NotNull String query, @NotNull Throwable error) {
         String message = error.getMessage();
         if (!CommonUtils.isEmpty(message)) {
             Matcher matcher = ERROR_POSITION_PATTERN.matcher(message);

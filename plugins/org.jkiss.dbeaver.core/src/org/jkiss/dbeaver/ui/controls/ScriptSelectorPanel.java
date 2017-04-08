@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls;
 
@@ -44,6 +43,7 @@ import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
+import org.jkiss.dbeaver.ui.TextUtils;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerObjectOpen;
@@ -77,9 +77,6 @@ public class ScriptSelectorPanel {
         this.workbenchWindow = workbenchWindow;
         Shell parent = this.workbenchWindow.getShell();
 
-        final Color fg = parent.getDisplay().getSystemColor(SWT.COLOR_INFO_FOREGROUND);
-        final Color bg = parent.getDisplay().getSystemColor(SWT.COLOR_INFO_BACKGROUND);
-
         popup = new Shell(parent, SWT.RESIZE | SWT.TITLE | SWT.CLOSE);
         if (containers.length == 1) {
             popup.setText("Choose SQL script for '" + containers[0].getName() + "'");
@@ -110,13 +107,11 @@ public class ScriptSelectorPanel {
         //gl.marginHeight = 0;
         //gl.marginWidth = 0;
         composite.setLayout(gl);
-        composite.setForeground(fg);
-        composite.setBackground(bg);
 
         patternText = new Text(composite, SWT.NONE);
         patternText.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-        patternText.setForeground(fg);
-        patternText.setBackground(bg);
+        //patternText.setForeground(fg);
+        //patternText.setBackground(bg);
         patternText.addModifyListener(new ModifyListener() {
             @Override
             public void modifyText(ModifyEvent e) {
@@ -127,6 +122,11 @@ public class ScriptSelectorPanel {
                 filterJob.schedule(250);
             }
         });
+        final Color fg = patternText.getForeground();//parent.getDisplay().getSystemColor(SWT.COLOR_INFO_FOREGROUND);
+        final Color bg = patternText.getBackground();//parent.getDisplay().getSystemColor(SWT.COLOR_INFO_BACKGROUND);
+
+        composite.setForeground(fg);
+        composite.setBackground(bg);
 
         newButton = new Button(composite, SWT.PUSH | SWT.FLAT);
         newButton.setText("&New Script");
@@ -146,7 +146,7 @@ public class ScriptSelectorPanel {
 
         ((GridData) UIUtils.createHorizontalLine(composite).getLayoutData()).horizontalSpan = 2;
 
-        Tree scriptTree = new Tree(composite, SWT.MULTI | SWT.FULL_SELECTION);
+        Tree scriptTree = new Tree(composite, SWT.SINGLE | SWT.FULL_SELECTION);
         final GridData gd = new GridData(GridData.FILL_BOTH);
         gd.horizontalSpan = 2;
         scriptTree.setLayoutData(gd);
@@ -266,7 +266,7 @@ public class ScriptSelectorPanel {
                         @Override
                         public void run() {
                             if (!item.isDisposed()) {
-                                item.setText(2, ri.getDescription());
+                                item.setText(2, TextUtils.getSingleLineString(CommonUtils.notEmpty(ri.getDescription())));
                             }
                         }
                     });

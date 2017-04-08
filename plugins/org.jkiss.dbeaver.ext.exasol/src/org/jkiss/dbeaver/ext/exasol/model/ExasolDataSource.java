@@ -1,69 +1,21 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.model;
-
-import org.eclipse.core.runtime.IAdaptable;
-
-import org.jkiss.code.NotNull;
-import org.jkiss.code.Nullable;
-import org.jkiss.dbeaver.DBException;
-import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.ext.exasol.ExasolDataSourceProvider;
-import org.jkiss.dbeaver.ext.exasol.ExasolSQLDialect;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolBaseObjectGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolConnectionGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolRole;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolRoleGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolUser;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolViewGrant;
-import org.jkiss.dbeaver.ext.exasol.model.plan.ExasolPlanAnalyser;
-import org.jkiss.dbeaver.model.DBPDataSourceContainer;
-import org.jkiss.dbeaver.model.DBPDataSourceInfo;
-import org.jkiss.dbeaver.model.DBPErrorAssistant;
-import org.jkiss.dbeaver.model.DBUtils;
-import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
-import org.jkiss.dbeaver.model.exec.DBCException;
-import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
-import org.jkiss.dbeaver.model.exec.DBCSession;
-import org.jkiss.dbeaver.model.exec.jdbc.JDBCDatabaseMetaData;
-import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
-import org.jkiss.dbeaver.model.exec.plan.DBCPlan;
-import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
-import org.jkiss.dbeaver.model.impl.DBSObjectCache;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectSimpleCache;
-import org.jkiss.dbeaver.model.meta.Association;
-import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
-import org.jkiss.dbeaver.model.sql.SQLDialect;
-import org.jkiss.dbeaver.model.struct.DBSDataType;
-import org.jkiss.dbeaver.model.struct.DBSObject;
-import org.jkiss.dbeaver.model.struct.DBSObjectSelector;
-import org.jkiss.dbeaver.model.struct.DBSStructureAssistant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolSchemaGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolScriptGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolSystemGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolTableGrant;
-import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolTableObjectType;
-import org.jkiss.utils.CommonUtils;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -75,6 +27,55 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.core.runtime.IAdaptable;
+import org.eclipse.core.runtime.Platform;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.ext.exasol.ExasolConstants;
+import org.jkiss.dbeaver.ext.exasol.ExasolDataSourceProvider;
+import org.jkiss.dbeaver.ext.exasol.ExasolSQLDialect;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolBaseObjectGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolConnectionGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolRole;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolRoleGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolSchemaGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolScriptGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolSystemGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolTableGrant;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolTableObjectType;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolUser;
+import org.jkiss.dbeaver.ext.exasol.manager.security.ExasolViewGrant;
+import org.jkiss.dbeaver.ext.exasol.model.plan.ExasolPlanAnalyser;
+import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBPDataSourceInfo;
+import org.jkiss.dbeaver.model.DBPErrorAssistant;
+import org.jkiss.dbeaver.model.DBUtils;
+import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
+import org.jkiss.dbeaver.model.exec.DBCException;
+import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
+import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
+import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCDatabaseMetaData;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
+import org.jkiss.dbeaver.model.exec.plan.DBCPlan;
+import org.jkiss.dbeaver.model.exec.plan.DBCPlanStyle;
+import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
+import org.jkiss.dbeaver.model.impl.DBSObjectCache;
+import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
+import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
+import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
+import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectSimpleCache;
+import org.jkiss.dbeaver.model.meta.Association;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSDataType;
+import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.model.struct.DBSObjectSelector;
+import org.jkiss.dbeaver.model.struct.DBSStructureAssistant;
+import org.jkiss.utils.CommonUtils;
+
 public class ExasolDataSource extends JDBCDataSource
 		implements DBSObjectSelector, DBCQueryPlanner, IAdaptable {
 
@@ -83,8 +84,8 @@ public class ExasolDataSource extends JDBCDataSource
 	private static final String GET_CURRENT_SCHEMA = "SELECT CURRENT_SCHEMA";
 	private static final String SET_CURRENT_SCHEMA = "OPEN SCHEMA \"%s\"";
 
-	private DBSObjectCache<ExasolDataSource, ExasolSchema> schemaCache;
-	private DBSObjectCache<ExasolDataSource, ExasolVirtualSchema> virtualSchemaCache;
+	public DBSObjectCache<ExasolDataSource, ExasolSchema> schemaCache;
+	public DBSObjectCache<ExasolDataSource, ExasolVirtualSchema> virtualSchemaCache;
 
 	private ExasolCurrentUserPrivileges exasolCurrentUserPrivileges;
 	private DBSObjectCache<ExasolDataSource, ExasolUser> userCache = null;
@@ -100,6 +101,8 @@ public class ExasolDataSource extends JDBCDataSource
 	private DBSObjectCache<ExasolDataSource, ExasolConnectionGrant> connectionGrantCache = null;
 	private DBSObjectCache<ExasolDataSource, ExasolBaseObjectGrant> baseTableGrantCache = null;
 	
+	private int driverMajorVersion = 5;
+	
 
 	private String activeSchemaName;
 
@@ -110,13 +113,7 @@ public class ExasolDataSource extends JDBCDataSource
 	public ExasolDataSource(DBRProgressMonitor monitor,
 			DBPDataSourceContainer container) throws DBException
 	{
-		super(monitor, container);
-	}
-
-	@Override
-	protected boolean isConnectionReadOnlyBroken()
-	{
-		return true;
+		super(monitor, container, new ExasolSQLDialect());
 	}
 
 	// -----------------------
@@ -137,6 +134,8 @@ public class ExasolDataSource extends JDBCDataSource
 			this.activeSchemaName = determineActiveSchema(session);
 			this.exasolCurrentUserPrivileges = new ExasolCurrentUserPrivileges(
 					monitor, session, this);
+			
+			this.driverMajorVersion = session.getMetaData().getDriverMajorVersion();
 
 		} catch (SQLException e) {
 			LOG.warn("Error reading active schema", e);
@@ -253,9 +252,14 @@ public class ExasolDataSource extends JDBCDataSource
     private Pattern ERROR_POSITION_PATTERN = Pattern.compile("(.+)\\[line ([0-9]+), column ([0-9]+)\\]");
 
     
+    public int getDriverMajorVersion()
+    {
+    	return this.driverMajorVersion;
+    }
+    
     @Nullable
     @Override
-    public ErrorPosition[] getErrorPosition(@NotNull DBCSession session, @NotNull String query, @NotNull Throwable error) {
+    public ErrorPosition[] getErrorPosition(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext context, @NotNull String query, @NotNull Throwable error) {
         while (error instanceof DBException) {
             if (error.getCause() == null) {
                 return null;
@@ -348,15 +352,8 @@ public class ExasolDataSource extends JDBCDataSource
 	}
 
 	@Override
-	protected SQLDialect createSQLDialect(
-			@NotNull JDBCDatabaseMetaData metaData)
-	{
-		return new ExasolSQLDialect(metaData);
-	}
-
-	@Override
 	protected Map<String, String> getInternalConnectionProperties(
-			DBRProgressMonitor monitor) throws DBCException
+		DBRProgressMonitor monitor, String purpose) throws DBCException
 	{
 		Map<String, String> props = new HashMap<>();
 		props.putAll(ExasolDataSourceProvider.getConnectionsProps());
@@ -726,6 +723,54 @@ public class ExasolDataSource extends JDBCDataSource
 			return null;
 		}
 	}
+	
+    @Override
+    public String getConnectionURL(DBPConnectionConfiguration connectionInfo) {
+        //Default Port
+        String port = ":8563";
+        if (!CommonUtils.isEmpty(connectionInfo.getHostPort())) {
+            port = ":" + connectionInfo.getHostPort();
+        }
+        Map<String, String> properties = connectionInfo.getProperties();
+
+        StringBuilder url = new StringBuilder(128);
+        url.append("jdbc:exa:").append(connectionInfo.getHostName()).append(port);
+
+        //check if we got an backup host list
+        String backupHostList = connectionInfo.getProviderProperty(ExasolConstants.DRV_BACKUP_HOST_LIST);
+
+        if (backupHostList != null && backupHostList != "")
+            url.append(",").append(backupHostList).append(port);
+
+        if (!url.toString().toUpperCase().contains("CLIENTNAME")) {
+            // Client info can only be provided in the url with the exasol driver
+            String clientName = Platform.getProduct().getName();
+
+            Object propClientName = properties.get(ExasolConstants.DRV_CLIENT_NAME);
+            if (propClientName != null)
+                clientName = propClientName.toString();
+            url.append(";clientname=").append(clientName);
+        }
+        
+        if (!url.toString().toUpperCase().contains("CLIENTVERSION"))
+        {
+        	String clientVersion=Platform.getProduct().getDefiningBundle().getVersion().toString();
+            Object propClientName = properties.get(ExasolConstants.DRV_CLIENT_VERSION);
+            if (propClientName != null)
+            	clientVersion = propClientName.toString();
+            url.append(";clientversion=").append(clientVersion);
+        }
+        Object querytimeout = properties.get(ExasolConstants.DRV_QUERYTIMEOUT);
+        if (querytimeout != null)
+            url.append(";").append(ExasolConstants.DRV_QUERYTIMEOUT).append("=").append(querytimeout);
+
+        Object connecttimeout = properties.get(ExasolConstants.DRV_CONNECT_TIMEOUT);
+        if (connecttimeout != null)
+            url.append(";").append(ExasolConstants.DRV_CONNECT_TIMEOUT).append("=").append(connecttimeout);
+
+        return url.toString();
+    }
+	
 
 	@Override
 	public DBSDataType getLocalDataType(String typeName)
@@ -739,8 +784,9 @@ public class ExasolDataSource extends JDBCDataSource
 		}
 	}
 
+	@NotNull
 	@Override
-	public DBCPlan planQueryExecution(DBCSession session, String query)
+	public DBCPlan planQueryExecution(@NotNull DBCSession session, @NotNull String query)
 			throws DBCException
 	{
 		ExasolPlanAnalyser plan = new ExasolPlanAnalyser(this, query);
@@ -748,7 +794,13 @@ public class ExasolDataSource extends JDBCDataSource
 		return plan;
 	}
 
-	public DBSObjectCache<ExasolDataSource, ExasolDataType> getDataTypeCache()
+    @NotNull
+	@Override
+    public DBCPlanStyle getPlanStyle() {
+        return DBCPlanStyle.PLAN;
+    }
+
+    public DBSObjectCache<ExasolDataSource, ExasolDataType> getDataTypeCache()
 	{
 		return dataTypeCache;
 	}

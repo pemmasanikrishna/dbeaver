@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.qm.meta;
 
@@ -27,21 +26,20 @@ import org.jkiss.dbeaver.model.sql.SQLDialect;
  */
 public class QMMSessionInfo extends QMMObject {
 
-    private String containerId;
-    private String containerName;
-    private String driverId;
-    private DBPConnectionConfiguration connectionConfiguration;
-    private String contextName;
+    private final String containerId;
+    private final String containerName;
+    private final String driverId;
+    private final DBPConnectionConfiguration connectionConfiguration;
+    private final String contextName;
     private SQLDialect sqlDialect;
     private boolean transactional;
 
-    private QMMSessionInfo previous;
     private QMMStatementInfo statementStack;
     private QMMStatementExecuteInfo executionStack;
     private QMMTransactionInfo transaction;
     //private Throwable stack;
 
-    public QMMSessionInfo(DBCExecutionContext context, boolean transactional, QMMSessionInfo previous)
+    public QMMSessionInfo(DBCExecutionContext context, boolean transactional)
     {
         this.containerId = context.getDataSource().getContainer().getId();
         this.containerName = context.getDataSource().getContainer().getName();
@@ -51,7 +49,6 @@ public class QMMSessionInfo extends QMMObject {
         if (context.getDataSource() instanceof SQLDataSource) {
             this.sqlDialect = ((SQLDataSource) context.getDataSource()).getSQLDialect();
         }
-        this.previous = previous;
         this.transactional = transactional;
         if (transactional) {
             this.transaction = new QMMTransactionInfo(this, null);
@@ -73,6 +70,11 @@ public class QMMSessionInfo extends QMMObject {
                 stat.close();
             }
         }
+        super.close();
+    }
+
+    public void reopen()
+    {
         super.close();
     }
 
@@ -245,11 +247,6 @@ public class QMMSessionInfo extends QMMObject {
         return transaction;
     }
 
-    public QMMSessionInfo getPrevious()
-    {
-        return previous;
-    }
-
     public boolean isTransactional()
     {
         return transactional;
@@ -258,7 +255,7 @@ public class QMMSessionInfo extends QMMObject {
     @Override
     public String toString()
     {
-        return "SESSION " + containerId;
+        return "SESSION " + containerName + " [" + contextName + "]";
     }
 
     public SQLDialect getSQLDialect() {

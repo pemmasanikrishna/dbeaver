@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.registry.maven;
 
@@ -21,13 +20,23 @@ import org.eclipse.core.runtime.IConfigurationElement;
 import org.eclipse.core.runtime.Platform;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
-import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.core.DBeaverCore;
+import org.jkiss.dbeaver.core.DBeaverActivator;
+import org.jkiss.dbeaver.model.access.DBAAuthInfo;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.registry.encode.PasswordEncrypter;
+import org.jkiss.dbeaver.registry.encode.SimpleStringEncrypter;
+import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
+import org.jkiss.utils.xml.XMLBuilder;
+import org.jkiss.utils.xml.XMLUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.*;
 
 public class MavenRegistry
@@ -55,6 +64,8 @@ public class MavenRegistry
     // Cache for not found artifact ids. Avoid multiple remote metadata reading
     private final Set<String> notFoundArtifacts = new HashSet<>();
 
+    private static final PasswordEncrypter ENCRYPTOR = new SimpleStringEncrypter();
+
     private MavenRegistry()
     {
     }
@@ -71,6 +82,7 @@ public class MavenRegistry
     private void init() {
         loadStandardRepositories();
         loadCustomRepositories();
+        sortRepositories();
     }
 
     private void loadStandardRepositories() {
@@ -97,35 +109,63 @@ public class MavenRegistry
             MAVEN_LOCAL_REPO_ID,
             MAVEN_LOCAL_REPO_NAME,
             localRepoURL,
-            null,
             MavenRepository.RepositoryType.LOCAL);
     }
 
-    public void loadCustomRepositories() {
+    public void setCustomRepositories(List<MavenRepository> customRepositories) {
         // Clear not-found cache
         notFoundArtifacts.clear();
+        // Remove old custom repos
+        for (Iterator<MavenRepository> iter = this.repositories.iterator(); iter.hasNext(); ) {
+            if (iter.next().getType() == MavenRepository.RepositoryType.CUSTOM) {
+                iter.remove();
+            }
+        }
+        // Add new and reorder
+        this.repositories.addAll(customRepositories);
+        sortRepositories();
+    }
 
-        // Remove all custom repositories
-        for (Iterator<MavenRepository> iterator = repositories.iterator(); iterator.hasNext(); ) {
-            MavenRepository repository = iterator.next();
-            if (repository.getType() == MavenRepository.RepositoryType.CUSTOM) {
-                iterator.remove();
+    public void loadCustomRepositories() {
+        final File cfgFile = getConfigurationFile();
+        if (cfgFile.exists()) {
+            try {
+                final Document reposDocument = XMLUtils.parseDocument(cfgFile);
+                for (Element repoElement : XMLUtils.getChildElementList(reposDocument.getDocumentElement(), "repository")) {
+                    String repoID = repoElement.getAttribute("id");
+                    MavenRepository repo = findRepository(repoID);
+                    if (repo == null) {
+                        String repoName = repoElement.getAttribute("name");
+                        String repoURL = repoElement.getAttribute("url");
+                        repo = new MavenRepository(
+                            repoID,
+                            repoName,
+                            repoURL,
+                            MavenRepository.RepositoryType.CUSTOM);
+                        List<String> scopes = new ArrayList<>();
+                        for (Element scopeElement : XMLUtils.getChildElementList(repoElement, "scope")) {
+                            scopes.add(scopeElement.getAttribute("group"));
+                        }
+                        repo.setScopes(scopes);
+
+                        repositories.add(repo);
+                    }
+
+                    repo.setOrder(CommonUtils.toInt(repoElement.getAttribute("order")));
+                    repo.setEnabled(CommonUtils.toBoolean(repoElement.getAttribute("enabled")));
+
+                    final String authUser = repoElement.getAttribute("auth-user");
+                    if (!CommonUtils.isEmpty(authUser)) {
+                        repo.getAuthInfo().setUserName(authUser);
+                        String authPassword = repoElement.getAttribute("auth-password");
+                        if (!CommonUtils.isEmpty(authPassword)) {
+                            repo.getAuthInfo().setUserPassword(ENCRYPTOR.decrypt(authPassword));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error parsing maven repositories configuration", e);
             }
-        }
-        // PArse repositories from preferences
-        String repoString = DBeaverCore.getGlobalPreferenceStore().getString(DBeaverPreferences.UI_MAVEN_REPOSITORIES);
-        if (CommonUtils.isEmpty(repoString)) {
-            return;
-        }
-        for (String repoInfo : repoString.split("\\|")) {
-            int divPos = repoInfo.indexOf(':');
-            if (divPos < 0) {
-                continue;
-            }
-            String repoID = repoInfo.substring(0, divPos);
-            String repoURL = repoInfo.substring(divPos + 1);
-            MavenRepository repo = new MavenRepository(repoID, repoID, repoURL, null, MavenRepository.RepositoryType.CUSTOM);
-            repositories.add(repo);
         }
     }
 
@@ -171,10 +211,13 @@ public class MavenRegistry
 
         // Try all available repositories (without resolve)
         for (MavenRepository repository : repositories) {
+            if (!repository.isEnabled()) {
+                continue;
+            }
             if (repository != currentRepository) {
-                if (!CommonUtils.isEmpty(repository.getScope())) {
+                if (!repository.getScopes().isEmpty()) {
                     // Check scope (group id)
-                    if (!repository.getScope().equals(ref.getGroupId())) {
+                    if (!repository.getScopes().contains(ref.getGroupId())) {
                         continue;
                     }
                 }
@@ -215,6 +258,61 @@ public class MavenRegistry
             }
         }
         return null;
+    }
+
+    public void saveConfiguration() {
+        sortRepositories();
+
+        try (OutputStream is = new FileOutputStream(getConfigurationFile())) {
+            XMLBuilder xml = new XMLBuilder(is, GeneralUtils.UTF8_ENCODING);
+            xml.setButify(true);
+            try (final XMLBuilder.Element e1 = xml.startElement("maven")) {
+                for (MavenRepository repository : repositories) {
+                    try (final XMLBuilder.Element e2 = xml.startElement("repository")) {
+                        xml.addAttribute("id", repository.getId());
+                        xml.addAttribute("order", repository.getOrder());
+                        xml.addAttribute("enabled", repository.isEnabled());
+                        if (repository.getType() != MavenRepository.RepositoryType.GLOBAL) {
+                            xml.addAttribute("url", repository.getUrl());
+                            xml.addAttribute("name", repository.getName());
+                            if (!CommonUtils.isEmpty(repository.getDescription())) {
+                                xml.addAttribute("description", repository.getDescription());
+                            }
+                            for (String scope : repository.getScopes()) {
+                                try (final XMLBuilder.Element e3 = xml.startElement("scope")) {
+                                    xml.addAttribute("group", scope);
+                                }
+                            }
+                            final DBAAuthInfo authInfo = repository.getAuthInfo();
+                            if (!CommonUtils.isEmpty(authInfo.getUserName())) {
+                                xml.addAttribute("auth-user", authInfo.getUserName());
+                                if (!CommonUtils.isEmpty(authInfo.getUserPassword())) {
+                                    xml.addAttribute("auth-password", ENCRYPTOR.encrypt(authInfo.getUserPassword()));
+                                }
+                            }
+
+                        }
+                    }
+                }
+            }
+            xml.flush();
+        } catch (Exception e) {
+            log.error("Error saving Maven registry", e);
+        }
+    }
+
+    private void sortRepositories() {
+        Collections.sort(repositories, new Comparator<MavenRepository>() {
+            @Override
+            public int compare(MavenRepository o1, MavenRepository o2) {
+                return o1.getOrder() - o2.getOrder();
+            }
+        });
+    }
+
+    private static File getConfigurationFile()
+    {
+        return DBeaverActivator.getConfigurationFile("maven-repositories.xml");
     }
 
 }

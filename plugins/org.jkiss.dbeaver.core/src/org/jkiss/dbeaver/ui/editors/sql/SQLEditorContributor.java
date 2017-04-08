@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql;
 
@@ -22,6 +21,7 @@ import org.eclipse.ui.IActionBars;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbenchActionConstants;
 import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.editors.text.TextEditorActionContributor;
 import org.eclipse.ui.texteditor.BasicTextEditorActionContributor;
 import org.eclipse.ui.texteditor.ITextEditorActionDefinitionIds;
 import org.eclipse.ui.texteditor.RetargetTextEditorAction;
@@ -37,16 +37,18 @@ import java.util.ResourceBundle;
 /**
  * SQL Editor contributor
  */
-public class SQLEditorContributor extends BasicTextEditorActionContributor
+public class SQLEditorContributor extends TextEditorActionContributor
 {
     static final String ACTION_CONTENT_ASSIST_PROPOSAL = "ContentAssistProposal"; //$NON-NLS-1$
     static final String ACTION_CONTENT_ASSIST_TIP = "ContentAssistTip"; //$NON-NLS-1$
+    static final String ACTION_CONTENT_ASSIST_INFORMATION = "ContentAssistInfo"; //$NON-NLS-1$
     static final String ACTION_CONTENT_FORMAT_PROPOSAL = "ContentFormatProposal"; //$NON-NLS-1$
 
     private SQLEditorBase activeEditorPart;
 
     private RetargetTextEditorAction contentAssistProposal;
     private RetargetTextEditorAction contentAssistTip;
+    private RetargetTextEditorAction contentAssistInformation;
     private RetargetTextEditorAction contentFormatProposal;
     private CopyUnformattedTextAction copyUnformattedTextAction;
 
@@ -75,8 +77,13 @@ public class SQLEditorContributor extends BasicTextEditorActionContributor
         contentAssistProposal.setActionDefinitionId(ITextEditorActionDefinitionIds.CONTENT_ASSIST_PROPOSALS);
         contentFormatProposal = new RetargetTextEditorAction(bundle, getActionResourcePrefix(ACTION_CONTENT_FORMAT_PROPOSAL));
         contentFormatProposal.setActionDefinitionId(CoreCommands.CMD_CONTENT_FORMAT);
+
         contentAssistTip = new RetargetTextEditorAction(bundle, getActionResourcePrefix(ACTION_CONTENT_ASSIST_TIP));
         contentAssistTip.setActionDefinitionId(ITextEditorActionDefinitionIds.CONTENT_ASSIST_CONTEXT_INFORMATION);
+
+        contentAssistInformation = new RetargetTextEditorAction(bundle, getActionResourcePrefix(ACTION_CONTENT_ASSIST_INFORMATION));
+        contentAssistInformation.setActionDefinitionId(ITextEditorActionDefinitionIds.SHOW_INFORMATION);
+
         copyUnformattedTextAction = new CopyUnformattedTextAction();
     }
 
@@ -106,6 +113,7 @@ public class SQLEditorContributor extends BasicTextEditorActionContributor
             // Update editor actions
             contentAssistProposal.setAction(getAction(activeEditorPart, ACTION_CONTENT_ASSIST_PROPOSAL)); //$NON-NLS-1$
             contentAssistTip.setAction(getAction(activeEditorPart, ACTION_CONTENT_ASSIST_TIP)); //$NON-NLS-1$
+            contentAssistInformation.setAction(getAction(activeEditorPart, ACTION_CONTENT_ASSIST_INFORMATION)); //$NON-NLS-1$
             contentFormatProposal.setAction(getAction(activeEditorPart, ACTION_CONTENT_FORMAT_PROPOSAL)); //$NON-NLS-1$
             copyUnformattedTextAction.setEditor(activeEditorPart);
         }
@@ -131,6 +139,7 @@ public class SQLEditorContributor extends BasicTextEditorActionContributor
                 editMenu.insertAfter(IWorkbenchActionConstants.MB_ADDITIONS, ActionUtils.makeCommandContribution(window, ITextEditorActionDefinitionIds.BLOCK_SELECTION_MODE));
                 editMenu.add(contentAssistProposal);
                 editMenu.add(contentAssistTip);
+                editMenu.add(contentAssistInformation);
                 MenuManager formatMenu = new MenuManager(CoreMessages.actions_menu_edit_ContentFormat);
                 editMenu.add(formatMenu);
                 formatMenu.add(contentFormatProposal);

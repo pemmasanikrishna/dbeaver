@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.model;
 
@@ -67,7 +66,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
     private int connectionLimit;
     private long tablespaceId;
 
-    public final AuthIdCache authIdCache = new AuthIdCache();
+    public final RoleCache roleCache = new RoleCache();
     public final AccessMethodCache accessMethodCache = new AccessMethodCache();
     public final ForeignDataWrapperCache foreignDataWrapperCache = new ForeignDataWrapperCache();
     public final ForeignServerCache foreignServerCache = new ForeignServerCache();
@@ -146,8 +145,8 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
     // Properties
 
     @Property(viewable = false, order = 3)
-    public PostgreAuthId getDBA(DBRProgressMonitor monitor) throws DBException {
-        return PostgreUtils.getObjectById(monitor, authIdCache, this, ownerId);
+    public PostgreRole getDBA(DBRProgressMonitor monitor) throws DBException {
+        return PostgreUtils.getObjectById(monitor, roleCache, this, ownerId);
     }
 
     @Property(viewable = false, order = 4)
@@ -206,7 +205,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
     }
 
     @Override
-    public void close() {
+    public void shutdown(DBRProgressMonitor monitor) {
 
     }
 
@@ -214,8 +213,8 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
     // Infos
 
     @Association
-    public Collection<PostgreAuthId> getAuthIds(DBRProgressMonitor monitor) throws DBException {
-        return authIdCache.getAllObjects(monitor, this);
+    public Collection<PostgreRole> getAuthIds(DBRProgressMonitor monitor) throws DBException {
+        return roleCache.getAllObjects(monitor, this);
     }
 
     @Association
@@ -328,6 +327,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
 
     }
 
+    @NotNull
     @Override
     public DBSObjectState getObjectState() {
         if (this == dataSource.getDefaultInstance()) {
@@ -344,7 +344,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
 
     @Override
     public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
-        authIdCache.clearCache();
+        roleCache.clearCache();
         accessMethodCache.clearCache();
         languageCache.clearCache();
         encodingCache.clearCache();
@@ -355,8 +355,8 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
         return this;
     }
 
-    public Collection<PostgreAuthId> getUsers(DBRProgressMonitor monitor) throws DBException {
-        return authIdCache.getAllObjects(monitor, this);
+    public Collection<PostgreRole> getUsers(DBRProgressMonitor monitor) throws DBException {
+        return roleCache.getAllObjects(monitor, this);
     }
 
     @Override
@@ -483,23 +483,23 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
         return name;
     }
 
-    class AuthIdCache extends JDBCObjectCache<PostgreDatabase, PostgreAuthId> {
+    class RoleCache extends JDBCObjectCache<PostgreDatabase, PostgreRole> {
 
         @Override
         protected JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session, @NotNull PostgreDatabase owner)
             throws SQLException
         {
             return session.prepareStatement(
-                "SELECT a.oid,a.* FROM pg_catalog.pg_authid a " +
+                "SELECT a.oid,a.* FROM pg_catalog.pg_roles a " +
                     "\nORDER BY a.oid"
             );
         }
 
         @Override
-        protected PostgreAuthId fetchObject(@NotNull JDBCSession session, @NotNull PostgreDatabase owner, @NotNull JDBCResultSet dbResult)
+        protected PostgreRole fetchObject(@NotNull JDBCSession session, @NotNull PostgreDatabase owner, @NotNull JDBCResultSet dbResult)
             throws SQLException, DBException
         {
-            return new PostgreAuthId(owner, dbResult);
+            return new PostgreRole(owner, dbResult);
         }
 
         @Override
@@ -508,7 +508,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
             // FIXME: maybe some better workaround?
             if (PostgreConstants.EC_PERMISSION_DENIED.equals(error.getDatabaseState())) {
                 log.warn(error);
-                setCache(Collections.<PostgreAuthId>emptyList());
+                setCache(Collections.<PostgreRole>emptyList());
                 return true;
             }
             return false;
@@ -651,7 +651,8 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
             return session.prepareStatement(
                 "SELECT n.oid,n.* FROM pg_catalog.pg_namespace n ORDER BY nspname");
 */
-            StringBuilder catalogQuery = new StringBuilder("SELECT n.oid,n.* FROM pg_catalog.pg_namespace n");
+            StringBuilder catalogQuery = new StringBuilder("SELECT n.oid,n.*,d.description FROM pg_catalog.pg_namespace n\n" +
+                "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=n.oid\n");
             DBSObjectFilter catalogFilters = database.getDataSource().getContainer().getObjectFilter(PostgreSchema.class, null, false);
             if ((catalogFilters != null && !catalogFilters.isNotApplicable()) || object != null || objectName != null) {
                 if (object != null || objectName != null) {

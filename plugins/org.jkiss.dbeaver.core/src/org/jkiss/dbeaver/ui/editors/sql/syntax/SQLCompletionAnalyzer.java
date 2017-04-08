@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql.syntax;
 
@@ -28,7 +27,10 @@ import org.jkiss.dbeaver.model.impl.DBObjectNameCaseTransformer;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.sql.*;
+import org.jkiss.dbeaver.model.sql.SQLDataSource;
+import org.jkiss.dbeaver.model.sql.SQLDialect;
+import org.jkiss.dbeaver.model.sql.SQLScriptElement;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.TextUtils;
@@ -155,7 +157,7 @@ class SQLCompletionAnalyzer
 
         String lastToken = null;
         for (int i = 0; i < tokens.size(); i++) {
-            String token = tokens.get(i);
+            final String token = tokens.get(i);
             if (i == tokens.size() - 1 && !request.wordDetector.getWordPart().endsWith(".")) {
                 lastToken = token;
                 break;
@@ -165,8 +167,9 @@ class SQLCompletionAnalyzer
             }
             // Get next structure container
             try {
-                token = DBUtils.getUnQuotedIdentifier(dataSource, token);
-                String objectName = DBObjectNameCaseTransformer.transformName(dataSource, token);
+                final String objectName =
+                    request.wordDetector.isQuoted(token) ? request.wordDetector.removeQuotes(token) :
+                    DBObjectNameCaseTransformer.transformName(dataSource, token);
                 childObject = sc.getChild(monitor, objectName);
                 if (childObject == null && i == 0) {
                     for (int k = 0; k < selectedContainers.length; k++) {
@@ -262,38 +265,44 @@ class SQLCompletionAnalyzer
             return null;
         }
         if (request.activeQuery == null) {
-            final SQLQuery queryAtPos = request.editor.extractQueryAtPos(request.documentOffset);
+            final SQLScriptElement queryAtPos = request.editor.extractQueryAtPos(request.documentOffset);
             if (queryAtPos != null) {
-                request.activeQuery = queryAtPos.getQuery() + " ";
+                request.activeQuery = queryAtPos.getText() + " ";
             }
         }
         if (request.activeQuery == null) {
             return null;
         }
 
-        final List<String> nameList = new ArrayList<>();
         if (token == null) {
             token = "";
         }
 
+        final List<String> nameList = new ArrayList<>();
         SQLDialect sqlDialect = ((SQLDataSource) dataSource).getSQLDialect();
         String quoteString = sqlDialect.getIdentifierQuoteString();
         {
-            String quote = quoteString == null ? SQLConstants.STR_QUOTE_DOUBLE :
-                SQLConstants.STR_QUOTE_DOUBLE.equals(quoteString) ?
-                    quoteString :
-                    Pattern.quote(quoteString);
-            String catalogSeparator = sqlDialect.getCatalogSeparator();
-            while (token.endsWith(catalogSeparator)) token = token.substring(0, token.length() -1);
+            // Regex matching MUST be very fast.
+            // Otherwise UI will freeze during SQL typing.
+            // So let's make regex as simple as possible.
+            // TODO: will be replaced by SQL preparse + structure analysis
 
-            String tableNamePattern = "([\\w_$" + quote + Pattern.quote(catalogSeparator) + "]+)";
+//            String quote = quoteString == null ? SQLConstants.STR_QUOTE_DOUBLE :
+//                SQLConstants.STR_QUOTE_DOUBLE.equals(quoteString) || SQLConstants.STR_QUOTE_APOS.equals(quoteString) ?
+//                    quoteString :
+//                    Pattern.quote(quoteString);
+            String catalogSeparator = sqlDialect.getCatalogSeparator();
+            while (token.endsWith(catalogSeparator)) {
+                token = token.substring(0, token.length() -1);
+            }
+
+            //String separatorPattern = ".".equals(catalogSeparator) ? "\\." : Pattern.quote(catalogSeparator);
+            String tableNamePattern = "([\\w_$\\.\\-\"`]+)";
             String structNamePattern;
             if (CommonUtils.isEmpty(token)) {
                 structNamePattern = "(?:from|update|join|into)\\s*" + tableNamePattern;
             } else {
-                structNamePattern = tableNamePattern +
-                    "(?:\\s*\\.\\s*" + tableNamePattern + ")?" +
-                    "\\s+(?:(?:AS)\\s)?" + token + "[\\s,]+";
+                structNamePattern = tableNamePattern + "\\s+(?:as\\s)?" + token + "[\\s,]+";
             }
 
             Pattern aliasPattern;
@@ -305,16 +314,14 @@ class SQLCompletionAnalyzer
             }
             String testQuery = SQLUtils.stripComments(request.editor.getSyntaxManager().getDialect(), request.activeQuery);
             Matcher matcher = aliasPattern.matcher(testQuery);
-            if (!matcher.find()) {
-                return null;
-            }
-
-            int groupCount = matcher.groupCount();
-            for (int i = 1; i <= groupCount; i++) {
-                String group = matcher.group(i);
-                if (!CommonUtils.isEmpty(group)) {
-                    String[] allNames = group.split(Pattern.quote(catalogSeparator));
-                    Collections.addAll(nameList, allNames);
+            if (matcher.find()) {
+                int groupCount = matcher.groupCount();
+                for (int i = 1; i <= groupCount; i++) {
+                    String group = matcher.group(i);
+                    if (!CommonUtils.isEmpty(group)) {
+                        String[] allNames = group.split(Pattern.quote(catalogSeparator));
+                        Collections.addAll(nameList, allNames);
+                    }
                 }
             }
         }
@@ -424,6 +431,7 @@ class SQLCompletionAnalyzer
                         request,
                         replaceString,
                         replaceString,
+                        DBPKeywordType.OTHER,
                         "All objects"));
                 } else if (!matchedObjects.isEmpty()) {
                     if (startPart != null) {
@@ -527,7 +535,7 @@ class SQLCompletionAnalyzer
             request,
             replaceString,
             objectName,
-            null,
+            DBPKeywordType.OTHER,
             objectIcon,
             isSingleObject,
             object);
@@ -540,7 +548,7 @@ class SQLCompletionAnalyzer
         CompletionRequest request,
         String replaceString,
         String displayString,
-        String description,
+        DBPKeywordType proposalType,
         @Nullable DBPImage image,
         boolean isObject,
         @Nullable DBPNamedObject object)
@@ -585,7 +593,8 @@ class SQLCompletionAnalyzer
                                 // relative to replacementOffset
             img, //image to display
             new ContextInformation(img, displayString, displayString), //the context information associated with this proposal
-            description,
+            proposalType,
+            null,
             object);
     }
 
@@ -593,6 +602,7 @@ class SQLCompletionAnalyzer
         CompletionRequest request,
         String replaceString,
         String displayString,
+        DBPKeywordType proposalType,
         String description)
     {
         return new SQLCompletionProposal(
@@ -602,6 +612,7 @@ class SQLCompletionAnalyzer
             replaceString.length(), //cursorPosition the position of the cursor following the insert
             null, //image to display
             new ContextInformation(null, displayString, displayString), //the context information associated with this proposal
+            proposalType,
             description,
             null);
     }

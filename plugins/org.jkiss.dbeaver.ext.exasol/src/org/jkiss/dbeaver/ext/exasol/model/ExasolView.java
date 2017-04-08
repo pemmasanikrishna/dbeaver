@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016-2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.model;
 
@@ -30,6 +29,7 @@ import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.*;
+import org.jkiss.utils.CommonUtils;
 
 import java.sql.ResultSet;
 import java.util.Collection;
@@ -50,7 +50,14 @@ public class ExasolView extends ExasolTableBase implements ExasolSourceObject {
     public ExasolView(DBRProgressMonitor monitor, ExasolSchema schema, ResultSet dbResult) {
         super(monitor, schema, dbResult);
         this.text = JDBCUtils.safeGetString(dbResult, "VIEW_TEXT");
+        this.description = JDBCUtils.safeGetString(dbResult, "REMARKS");
 
+    }
+    
+    public ExasolView(ExasolSchema schema)
+    {
+        super(schema,null,false);
+        text = "";
     }
 
 
@@ -61,7 +68,7 @@ public class ExasolView extends ExasolTableBase implements ExasolSourceObject {
 
 
     @Override
-    @Property(viewable = true, editable = false, order = 40)
+    @Property(viewable = true, editable = false, updatable = false, order = 40)
     public String getDescription() {
         return this.description;
     }
@@ -108,13 +115,13 @@ public class ExasolView extends ExasolTableBase implements ExasolSourceObject {
     // from Tables don't have those..
     // -----------------
     @Override
-    public Collection<? extends DBSEntityAssociation> getReferences(DBRProgressMonitor monitor) throws DBException {
+    public Collection<? extends DBSEntityAssociation> getReferences(@NotNull DBRProgressMonitor monitor) throws DBException {
         return Collections.emptyList();
     }
 
 
     @Override
-    public Collection<ExasolTableForeignKey> getAssociations(DBRProgressMonitor monitor) throws DBException {
+    public Collection<ExasolTableForeignKey> getAssociations(@NotNull DBRProgressMonitor monitor) throws DBException {
         return Collections.emptyList();
     }
 
@@ -125,10 +132,20 @@ public class ExasolView extends ExasolTableBase implements ExasolSourceObject {
     }
 
     @Override
+    @Property(hidden = true, editable = true, updatable = true, order = -1)
     public String getObjectDefinitionText(DBRProgressMonitor monitor) throws DBException {
         return SQLUtils.formatSQL(getDataSource(), this.text);
 
     }
-
-
+    
+    @Override
+    public void setObjectDefinitionText(String sourceText) throws DBException
+    {
+        this.text = sourceText;
+    }
+    
+    public String getSource()
+    {
+        return this.text;
+    }
 }

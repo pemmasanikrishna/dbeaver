@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.object.struct;
 
@@ -37,10 +36,11 @@ import org.jkiss.dbeaver.model.struct.DBSEntity;
 import org.jkiss.dbeaver.model.struct.DBSEntityAttribute;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.controls.CustomTableEditor;
+import org.jkiss.dbeaver.ui.controls.TableColumnSortListener;
 import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
-import java.text.Collator;
 import java.util.*;
 import java.util.List;
 
@@ -51,19 +51,47 @@ import java.util.List;
  */
 public abstract class AttributesSelectorPage extends BaseObjectEditPage {
 
-    private DBSEntity entity;
-    private Table columnsTable;
-    private List<AttributeInfo> attributes = new ArrayList<>();
-    private Button toggleButton;
+    protected DBSEntity entity;
+    protected Table columnsTable;
 
-    private static class AttributeInfo {
+    protected List<AttributeInfo> attributes = new ArrayList<>();
+    protected Button toggleButton;
+    protected Group columnsGroup;
+
+    protected static class AttributeInfo {
         DBSEntityAttribute attribute;
         int position;
+        Map<String, Object> properties = new HashMap<>();
 
         public AttributeInfo(DBSEntityAttribute attribute)
         {
             this.attribute = attribute;
             this.position = -1;
+        }
+
+        public DBSEntityAttribute getAttribute() {
+            return attribute;
+        }
+
+        public int getPosition() {
+            return position;
+        }
+
+        public Object getProperty(String name) {
+            return properties.get(name);
+        }
+
+        public void setProperty(String name, Object value) {
+            if (value == null) {
+                properties.remove(name);
+            } else {
+                properties.put(name, value);
+            }
+        }
+
+        @Override
+        public String toString() {
+            return attribute.getName();
         }
     }
 
@@ -75,8 +103,26 @@ public abstract class AttributesSelectorPage extends BaseObjectEditPage {
         this.entity = entity;
     }
 
+    public Map<String, Object> getAttributeProperties(DBSEntityAttribute attr) {
+        for (AttributeInfo attrInfo : attributes) {
+            if (attrInfo.attribute == attr) {
+                return attrInfo.properties;
+            }
+        }
+        return Collections.emptyMap();
+    }
+
+    public Object getAttributeProperty(DBSEntityAttribute attr, String propName) {
+        for (AttributeInfo attrInfo : attributes) {
+            if (attrInfo.attribute == attr) {
+                return attrInfo.properties.get(propName);
+            }
+        }
+        return null;
+    }
+
     @Override
-    protected Control createPageContents(Composite parent) {
+    protected Composite createPageContents(Composite parent) {
         final Composite panel = UIUtils.createPlaceholder(parent, 1);
         panel.setLayoutData(new GridData(GridData.FILL_BOTH));
 
@@ -95,7 +141,7 @@ public abstract class AttributesSelectorPage extends BaseObjectEditPage {
 
     protected void createColumnsGroup(Composite panel)
     {
-        Composite columnsGroup = UIUtils.createControlGroup(panel, CoreMessages.dialog_struct_columns_select_group_columns, 1, GridData.FILL_BOTH, 0);
+        columnsGroup = UIUtils.createControlGroup(panel, CoreMessages.dialog_struct_columns_select_group_columns, 1, GridData.FILL_BOTH, 0);
         //columnsViewer = new TableViewer(columnsGroup, SWT.BORDER | SWT.SINGLE | SWT.CHECK);
         columnsTable = new Table(columnsGroup, SWT.BORDER | SWT.SINGLE | SWT.FULL_SELECTION | SWT.CHECK);
         columnsTable.setHeaderVisible(true);
@@ -111,14 +157,18 @@ public abstract class AttributesSelectorPage extends BaseObjectEditPage {
             }
         });
 
-        TableColumn colName = UIUtils.createTableColumn(columnsTable, SWT.NONE, CoreMessages.dialog_struct_columns_select_column);
-        colName.addListener(SWT.Selection, new SortListener(0));
+        createAttributeColumns(columnsTable);
 
-        TableColumn colPosition = UIUtils.createTableColumn(columnsTable, SWT.CENTER, "#"); //$NON-NLS-1$
-        colPosition.addListener(SWT.Selection, new SortListener(1));
-
-        TableColumn colType = UIUtils.createTableColumn(columnsTable, SWT.RIGHT, "Type"); //$NON-NLS-1$
-        colType.addListener(SWT.Selection, new SortListener(2));
+        final CustomTableEditor tableEditor = new CustomTableEditor(columnsTable) {
+            @Override
+            protected Control createEditor(Table table, final int index, final TableItem item) {
+                return createCellEditor(table, index, item, (AttributeInfo)item.getData());
+            }
+            @Override
+            protected void saveEditorValue(Control control, int index, TableItem item) {
+                saveCellValue(control, index, item, (AttributeInfo)item.getData());
+            }
+        };
 
         toggleButton = new Button(columnsGroup, SWT.PUSH);
         toggleButton.setText("Select All");
@@ -149,6 +199,38 @@ public abstract class AttributesSelectorPage extends BaseObjectEditPage {
                 }
             }
         });
+    }
+
+    protected void createAttributeColumns(Table columnsTable) {
+        TableColumn colName = UIUtils.createTableColumn(columnsTable, SWT.NONE, CoreMessages.dialog_struct_columns_select_column);
+        colName.addListener(SWT.Selection, new TableColumnSortListener(columnsTable, 0));
+
+        TableColumn colPosition = UIUtils.createTableColumn(columnsTable, SWT.CENTER, "#"); //$NON-NLS-1$
+        colPosition.addListener(SWT.Selection, new TableColumnSortListener(columnsTable, 1));
+
+        TableColumn colType = UIUtils.createTableColumn(columnsTable, SWT.RIGHT, "Type"); //$NON-NLS-1$
+        colType.addListener(SWT.Selection, new TableColumnSortListener(columnsTable, 2));
+    }
+
+    protected int fillAttributeColumns(DBSEntityAttribute attribute, AttributeInfo attributeInfo, TableItem columnItem) {
+        columnItem.setText(0, attribute.getName());
+        columnItem.setText(1, String.valueOf(attribute.getOrdinalPosition()));
+        columnItem.setText(2, attribute.getFullTypeName());
+        return 2;
+    }
+
+    protected Control createCellEditor(Table table, int index, TableItem item, AttributeInfo data) {
+/*
+        final Text text = new Text(table, SWT.BORDER);
+        text.setText(item.getText(index));
+        text.selectAll();
+        return text;
+*/
+        return null;
+    }
+
+    protected void saveCellValue(Control control, int index, TableItem item, AttributeInfo data) {
+        //item.setText(index, control.getText());
     }
 
     protected void fillAttributes(final DBSEntity entity)
@@ -191,9 +273,7 @@ public abstract class AttributesSelectorPage extends BaseObjectEditPage {
             if (attributeNode != null) {
                 columnItem.setImage(0, DBeaverIcons.getImage(attributeNode.getNodeIcon()));
             }
-            columnItem.setText(0, attribute.getName());
-            columnItem.setText(1, String.valueOf(attribute.getOrdinalPosition()));
-            columnItem.setText(2, attribute.getFullTypeName());
+            fillAttributeColumns(attribute, col, columnItem);
             columnItem.setData(col);
             if (isColumnSelected(attribute)) {
                 columnItem.setChecked(true);
@@ -318,43 +398,6 @@ public abstract class AttributesSelectorPage extends BaseObjectEditPage {
             }
         }
         return false;
-    }
-
-    private class SortListener implements Listener
-    {
-        int columnIndex;
-        int sortDirection = SWT.DOWN;
-        TableColumn prevColumn = null;
-
-        private SortListener(int columnIndex) {
-            this.columnIndex = columnIndex;
-        }
-
-        @Override
-        public void handleEvent(Event e) {
-            final Collator collator = Collator.getInstance(Locale.getDefault());
-            TableColumn column = (TableColumn)e.widget;
-            if (prevColumn == column) {
-                // Set reverse order
-                sortDirection = (sortDirection == SWT.UP ? SWT.DOWN : SWT.UP);
-            }
-            prevColumn = column;
-            columnsTable.setSortColumn(column);
-            columnsTable.setSortDirection(sortDirection);
-            UIUtils.sortTable(columnsTable, new Comparator<TableItem>() {
-                @Override
-                public int compare(TableItem e1, TableItem e2) {
-                    int mul = (sortDirection == SWT.UP ? 1 : -1);
-                    String text1 = e1.getText(columnIndex);
-                    String text2 = e2.getText(columnIndex);
-                    try {
-                        return (int)(Double.parseDouble(text1) - Double.parseDouble(text2)) * mul;
-                    } catch (NumberFormatException e3) {
-                        return collator.compare(text1, text2) * mul;
-                    }
-                }
-            });
-        }
     }
 
 }

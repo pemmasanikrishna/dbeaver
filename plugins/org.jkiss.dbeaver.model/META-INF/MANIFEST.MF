@@ -2,7 +2,8 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: DBeaver Model Plug-in
 Bundle-SymbolicName: org.jkiss.dbeaver.model;singleton:=true
-Bundle-Version: 1.0.36
+Bundle-Version: 1.0.44
+Bundle-Release-Date: 20170401
 Bundle-ActivationPolicy: lazy
 Bundle-RequiredExecutionEnvironment: JavaSE-1.7
 Bundle-Activator: org.jkiss.dbeaver.bundle.ModelActivator
@@ -10,6 +11,7 @@ Export-Package: org.jkiss.dbeaver,
  org.jkiss.dbeaver.model,
  org.jkiss.dbeaver.model.access,
  org.jkiss.dbeaver.model.admin.sessions,
+ org.jkiss.dbeaver.model.admin.locks,
  org.jkiss.dbeaver.model.app,
  org.jkiss.dbeaver.model.connection,
  org.jkiss.dbeaver.model.data,
@@ -53,6 +55,7 @@ Export-Package: org.jkiss.dbeaver,
  org.jkiss.dbeaver.model.runtime.features,
  org.jkiss.dbeaver.model.runtime.load,
  org.jkiss.dbeaver.model.sql,
+ org.jkiss.dbeaver.model.sql.eval,
  org.jkiss.dbeaver.model.sql.format,
  org.jkiss.dbeaver.model.sql.format.external,
  org.jkiss.dbeaver.model.sql.format.tokenized,

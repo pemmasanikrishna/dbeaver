@@ -1,44 +1,54 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.core.application;
 
+import org.eclipse.core.runtime.FileLocator;
+import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.jface.dialogs.MessageDialogWithToggle;
 import org.eclipse.jface.dialogs.TrayDialog;
 import org.eclipse.jface.preference.PreferenceManager;
+import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.ui.*;
 import org.eclipse.ui.application.IWorkbenchConfigurer;
 import org.eclipse.ui.application.IWorkbenchWindowConfigurer;
 import org.eclipse.ui.application.WorkbenchAdvisor;
 import org.eclipse.ui.application.WorkbenchWindowAdvisor;
 import org.eclipse.ui.ide.IDE;
+import org.eclipse.ui.internal.ide.IDEWorkbenchPlugin;
 import org.jkiss.dbeaver.DBeaverPreferences;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.application.update.DBeaverVersionChecker;
 import org.jkiss.dbeaver.registry.DataSourceDescriptor;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
 import org.jkiss.dbeaver.ui.actions.datasource.DataSourceHandler;
 import org.jkiss.dbeaver.ui.dialogs.ConfirmationDialog;
 import org.jkiss.dbeaver.ui.editors.content.ContentEditorInput;
+import org.osgi.framework.Bundle;
+
+import java.net.URL;
 
 /**
  * This workbench advisor creates the window advisor, and specifies
  * the perspective id for the initial window.
  */
 public class ApplicationWorkbenchAdvisor extends WorkbenchAdvisor {
+    private static final Log log = Log.getLog(ApplicationWorkbenchAdvisor.class);
+
     private static final String PERSPECTIVE_ID = "org.jkiss.dbeaver.core.perspective"; //$NON-NLS-1$
     public static final String DBEAVER_SCHEME_NAME = "org.jkiss.dbeaver.defaultKeyScheme"; //$NON-NLS-1$
 
@@ -74,7 +84,28 @@ public class ApplicationWorkbenchAdvisor extends WorkbenchAdvisor {
         // register workspace IDE adapters
         IDE.registerAdapters();
 
+        declareWorkbenchImages(configurer);
+
         TrayDialog.setDialogHelpAvailable(true);
+    }
+
+    /**
+     * This is a bit hacky. Copied from IDEWorkbenchAdvisor.
+     * Adds standard Eclipse icons mappings
+     */
+    private void declareWorkbenchImages(IWorkbenchConfigurer configurer) {
+
+        Bundle ideBundle = Platform.getBundle(IDEWorkbenchPlugin.IDE_WORKBENCH);
+        final String ICONS_PATH = "$nl$/icons/full/";//$NON-NLS-1$
+        final String PATH_OBJECT = ICONS_PATH + "obj16/"; // Model object //$NON-NLS-1$
+        declareWorkbenchImage(configurer, ideBundle, IDE.SharedImages.IMG_OBJ_PROJECT,
+            PATH_OBJECT + "prj_obj.png", true); //$NON-NLS-1$
+    }
+
+    private void declareWorkbenchImage(IWorkbenchConfigurer configurer, Bundle ideBundle, String symbolicName, String path, boolean shared) {
+        URL url = FileLocator.find(ideBundle, new Path(path), null);
+        ImageDescriptor desc = ImageDescriptor.createFromURL(url);
+        configurer.declareImage(symbolicName, desc, shared);
     }
 
     @Override
@@ -154,4 +185,8 @@ public class ApplicationWorkbenchAdvisor extends WorkbenchAdvisor {
         return true;
     }
 
+    public void eventLoopException(Throwable exception) {
+        super.eventLoopException(exception);
+        log.error("Event loop exception", exception);
+    }
 }

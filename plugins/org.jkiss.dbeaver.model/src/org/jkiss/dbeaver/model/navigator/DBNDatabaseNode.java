@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.navigator;
 
@@ -31,6 +30,7 @@ import org.jkiss.dbeaver.model.navigator.meta.DBXTreeNode;
 import org.jkiss.dbeaver.model.navigator.meta.DBXTreeObject;
 import org.jkiss.dbeaver.model.runtime.DBRProgressListener;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.BeanUtils;
@@ -187,7 +187,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         if (childNodes == null && hasChildren(false)) {
             if (this.initializeNode(monitor, null)) {
                 final List<DBNDatabaseNode> tmpList = new ArrayList<>();
-                loadChildren(monitor, getMeta(), null, tmpList);
+                loadChildren(monitor, getMeta(), null, tmpList, true);
                 if (!monitor.isCanceled()) {
                     if (tmpList.isEmpty()) {
                         this.childNodes = EMPTY_NODES;
@@ -262,6 +262,18 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         clearChildren(reflect);
     }
 
+    /**
+     * Reorder children nodes
+     */
+    public void updateChildrenOrder(boolean reflect) {
+        try {
+            refreshNodeContent(VoidProgressMonitor.INSTANCE, getObject(), this, reflect);
+        } catch (DBException e) {
+            log.error("Error reordering node children", e);
+        }
+
+    }
+
     public boolean needsInitialization()
     {
         return childNodes == null && hasChildren(false);
@@ -310,7 +322,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
                     }
                     return null;
                 } else {
-                    refreshNodeContent(monitor, newObject, source);
+                    refreshNodeContent(monitor, newObject, source, true);
                     return this;
                 }
             } else {
@@ -323,7 +335,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         }
     }
 
-    private void refreshNodeContent(final DBRProgressMonitor monitor, DBSObject newObject, Object source)
+    private void refreshNodeContent(final DBRProgressMonitor monitor, DBSObject newObject, Object source, boolean reflect)
         throws DBException
     {
         if (isDisposed()) {
@@ -335,18 +347,17 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
             if (newObject != getObject()) {
                 reloadObject(monitor, newObject);
             }
-            model.fireNodeUpdate(source, this, DBNEvent.NodeChange.LOCK);
+            if (reflect) model.fireNodeUpdate(source, this, DBNEvent.NodeChange.LOCK);
 
-            this.reloadChildren(monitor);
+            this.reloadChildren(monitor, reflect);
 
-            model.fireNodeUpdate(source, this, DBNEvent.NodeChange.REFRESH);
+            if (reflect) model.fireNodeUpdate(source, this, DBNEvent.NodeChange.REFRESH);
         } finally {
             this.locked = false;
 
             // Unlock node
-            model.fireNodeUpdate(source, this, DBNEvent.NodeChange.UNLOCK);
+            if (reflect) model.fireNodeUpdate(source, this, DBNEvent.NodeChange.UNLOCK);
         }
-        //new RefreshJob("Refresh node " + getNodeName()).schedule();
     }
 
     protected void clearChildren(boolean reflect)
@@ -367,7 +378,8 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         DBRProgressMonitor monitor,
         final DBXTreeNode meta,
         final DBNDatabaseNode[] oldList,
-        final List<DBNDatabaseNode> toList)
+        final List<DBNDatabaseNode> toList,
+        boolean reflect)
         throws DBException
     {
         if (monitor.isCanceled()) {
@@ -388,11 +400,11 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
             monitor.subTask(ModelMessages.model_navigator_load_ + " " + child.getChildrenType(getObject().getDataSource()));
             if (child instanceof DBXTreeItem) {
                 final DBXTreeItem item = (DBXTreeItem) child;
-                boolean isLoaded = loadTreeItems(monitor, item, oldList, toList);
+                boolean isLoaded = loadTreeItems(monitor, item, oldList, toList, reflect);
                 if (!isLoaded && item.isOptional() && item.getRecursiveLink() == null) {
                     // This may occur only if no child nodes was read
                     // Then we try to go on next DBX level
-                    loadChildren(monitor, item, oldList, toList);
+                    loadChildren(monitor, item, oldList, toList, reflect);
                 }
             } else if (child instanceof DBXTreeFolder) {
                 if (oldList == null) {
@@ -402,7 +414,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
                 } else {
                     for (DBNDatabaseNode oldFolder : oldList) {
                         if (oldFolder.getMeta() == child) {
-                            oldFolder.reloadChildren(monitor);
+                            oldFolder.reloadChildren(monitor, reflect);
                             toList.add(oldFolder);
                             break;
                         }
@@ -416,7 +428,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
                 } else {
                     for (DBNDatabaseNode oldObject : oldList) {
                         if (oldObject.getMeta() == child) {
-                            oldObject.reloadChildren(monitor);
+                            oldObject.reloadChildren(monitor, reflect);
                             toList.add(oldObject);
                             break;
                         }
@@ -429,7 +441,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         }
         monitor.done();
 
-        if (filtered) {
+        if (reflect && filtered) {
             getModel().fireNodeUpdate(this, this, DBNEvent.NodeChange.REFRESH);
         }
     }
@@ -441,6 +453,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
      * @param meta items meta info
      * @param oldList previous child items
      * @param toList list ot add new items   @return true on success
+     * @param reflect
      * @return true on success
      * @throws DBException on any DB error
      */
@@ -448,7 +461,8 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         DBRProgressMonitor monitor,
         DBXTreeItem meta,
         final DBNDatabaseNode[] oldList,
-        final List<DBNDatabaseNode> toList)
+        final List<DBNDatabaseNode> toList,
+        boolean reflect)
         throws DBException
     {
         if (this.isDisposed()) {
@@ -516,9 +530,11 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
 
                         if (oldChild.hasChildren(false) && !oldChild.needsInitialization()) {
                             // Refresh children recursive
-                            oldChild.reloadChildren(monitor);
+                            oldChild.reloadChildren(monitor, reflect);
                         }
-                        getModel().fireNodeUpdate(this, oldChild, DBNEvent.NodeChange.REFRESH);
+                        if (reflect) {
+                            getModel().fireNodeUpdate(this, oldChild, DBNEvent.NodeChange.REFRESH);
+                        }
 
                         toList.add(oldChild);
                         added = true;
@@ -657,7 +673,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         return pathName.toString();
     }
 
-    protected void reloadChildren(DBRProgressMonitor monitor)
+    protected void reloadChildren(DBRProgressMonitor monitor, boolean reflect)
         throws DBException
     {
         DBNDatabaseNode[] oldChildren;
@@ -669,7 +685,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
             oldChildren = Arrays.copyOf(childNodes, childNodes.length);
         }
         List<DBNDatabaseNode> newChildren = new ArrayList<>();
-        loadChildren(monitor, getMeta(), oldChildren, newChildren);
+        loadChildren(monitor, getMeta(), oldChildren, newChildren, reflect);
         synchronized (this) {
             childNodes = newChildren.toArray(new DBNDatabaseNode[newChildren.size()]);
         }

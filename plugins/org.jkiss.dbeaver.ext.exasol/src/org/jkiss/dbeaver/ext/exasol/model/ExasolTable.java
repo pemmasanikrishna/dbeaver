@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016-2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.model;
 
@@ -22,15 +21,15 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.exasol.ExasolConstants;
-import org.jkiss.dbeaver.ext.exasol.editors.ExasolSourceObject;
 import org.jkiss.dbeaver.ext.exasol.tools.ExasolUtils;
 import org.jkiss.dbeaver.model.DBPNamedObject2;
 import org.jkiss.dbeaver.model.DBPRefreshableObject;
+import org.jkiss.dbeaver.model.DBPScriptObject;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.DBCException;
-import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCStructCache;
 import org.jkiss.dbeaver.model.meta.Association;
@@ -48,7 +47,7 @@ import java.util.Collection;
 /**
  * @author Karl
  */
-public class ExasolTable extends ExasolTableBase implements DBPRefreshableObject, DBPNamedObject2, ExasolSourceObject {
+public class ExasolTable extends ExasolTableBase implements DBPRefreshableObject, DBPNamedObject2, DBPScriptObject {
 
     private Boolean hasDistKey;
     private Timestamp lastCommit;
@@ -84,7 +83,7 @@ public class ExasolTable extends ExasolTableBase implements DBPRefreshableObject
 									            "		o.root_name = s.root_name and" +
 									            "		o.object_name = s.object_name and" +
 									            "		o.object_type = s.object_type" +
-									            "   where o.root_name = ? and o.object_name = ? and t.table_schema = ? and t.table_name = ?" +
+									            "   where o.root_name = '%s' and o.object_name = '%s' and t.table_schema = '%s' and t.table_name = '%s'" +
 									            " union all "
 									            + " select schema_name as table_schema,"
 									            + " object_name as table_name,"
@@ -97,7 +96,7 @@ public class ExasolTable extends ExasolTableBase implements DBPRefreshableObject
 									            + " 0 as raw_object_size,"
 									            + " 0 as mem_object_size,"
 									            + " object_type"
-									            + " from SYS.EXA_SYSCAT WHERE object_type = 'TABLE' and schema_name = ? and object_name = ?"
+									            + " from SYS.EXA_SYSCAT WHERE object_type = 'TABLE' and schema_name = '%s' and object_name = '%s'"
 									            + ") as o"
 									            + "	order by table_schema,o.table_name";
     
@@ -117,16 +116,18 @@ public class ExasolTable extends ExasolTableBase implements DBPRefreshableObject
     private void read(DBRProgressMonitor monitor) throws DBCException
     {
     	JDBCSession session = DBUtils.openMetaSession(monitor, getDataSource(), "Read Table Details");
-    	try (JDBCPreparedStatement stmt = session.prepareStatement(readAdditionalInfo))
+    	try (JDBCStatement stmt = session.createStatement())
     	{
-    		stmt.setString(1, this.getSchema().getName());
-    		stmt.setString(2, this.getName());
-    		stmt.setString(3, this.getSchema().getName());
-    		stmt.setString(4, this.getName());
-    		stmt.setString(5, this.getSchema().getName());
-    		stmt.setString(6, this.getName());
+    		String sql = String.format(readAdditionalInfo,
+    				ExasolUtils.quoteString(this.getSchema().getName()),
+    				ExasolUtils.quoteString(this.getName()),
+    				ExasolUtils.quoteString(this.getSchema().getName()),
+    				ExasolUtils.quoteString(this.getName()),
+    				ExasolUtils.quoteString(this.getSchema().getName()),
+    				ExasolUtils.quoteString(this.getName())
+    				);
     		
-    		try (JDBCResultSet dbResult = stmt.executeQuery()) 
+    		try (JDBCResultSet dbResult = stmt.executeQuery(sql)) 
     		{
     			dbResult.next();
     	        this.hasDistKey = JDBCUtils.safeGetBoolean(dbResult, "TABLE_HAS_DISTRIBUTION_KEY");
@@ -141,10 +142,6 @@ public class ExasolTable extends ExasolTableBase implements DBPRefreshableObject
     	} catch (SQLException e) {
     		throw new DBCException(e,getDataSource());
 		}
-    	
-    	
-    	
-    	
     }
     
     @Override

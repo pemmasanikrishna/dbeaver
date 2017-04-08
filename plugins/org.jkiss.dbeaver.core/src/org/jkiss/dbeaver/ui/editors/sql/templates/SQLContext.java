@@ -1,24 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql.templates;
 
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.jface.text.IRegion;
 import org.eclipse.jface.text.Position;
 import org.eclipse.jface.text.templates.*;
 import org.jkiss.dbeaver.model.DBPContextProvider;
@@ -70,6 +70,7 @@ public class SQLContext extends DocumentTemplateContext implements DBPContextPro
             }
         };
         TemplateBuffer buffer = translator.translate(template);
+        formatTemplate(buffer);
 /*
         // Reorder variables
         TemplateVariable[] bufferVariables = buffer.getVariables();
@@ -87,6 +88,21 @@ public class SQLContext extends DocumentTemplateContext implements DBPContextPro
         getContextType().resolve(buffer, this);
 
         return buffer;
+    }
+
+    private void formatTemplate(TemplateBuffer buffer) {
+        TemplateVariable[] variables= buffer.getVariables();
+        final String indentation = getIndentation();
+        String content = buffer.getString();
+        if (!indentation.isEmpty() && content.indexOf('\n') != -1) {
+            StringBuilder result = new StringBuilder();
+            for (int i = 0; i < content.length(); i++) {
+                char c = content.charAt(i);
+                result.append(c);
+                if (c == '\n') result.append(indentation);
+            }
+            buffer.setContent(result.toString(), variables);
+        }
     }
 
 /*
@@ -118,5 +134,25 @@ public class SQLContext extends DocumentTemplateContext implements DBPContextPro
     Collection<SQLVariable> getVariables()
     {
         return variables.values();
+    }
+
+    private String getIndentation() {
+        int start = this.getStart();
+        IDocument document = this.getDocument();
+
+        try {
+            IRegion region = document.getLineInformationOfOffset(start);
+            int lineIndent = start - region.getOffset();
+            if (lineIndent <= 0) {
+                return "";
+            }
+            char[] buf = new char[lineIndent];
+            for (int i = 0; i < lineIndent; i++) {
+                buf[i] = ' ';
+            }
+            return String.valueOf(buf);
+        } catch (Exception var6) {
+            return "";
+        }
     }
 }

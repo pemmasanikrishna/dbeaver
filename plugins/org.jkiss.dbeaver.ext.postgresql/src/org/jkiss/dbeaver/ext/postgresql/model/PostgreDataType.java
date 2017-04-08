@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.model;
 
@@ -71,6 +70,8 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
         "regdictionary",
     };
 
+    private final boolean alias;
+
     private long typeId;
     private PostgreTypeType typeType;
     private PostgreTypeCategory typeCategory;
@@ -102,27 +103,27 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
     private final AttributeCache attributeCache;
     private Object[] enumValues;
 
-    public PostgreDataType(@NotNull JDBCSession monitor, @NotNull PostgreSchema owner, long typeId, int valueType, String name, int length, JDBCResultSet dbResult) throws DBException {
+    public PostgreDataType(@NotNull JDBCSession session, @NotNull PostgreSchema owner, long typeId, int valueType, String name, int length, JDBCResultSet dbResult) throws DBException {
         super(owner, valueType, name, null, false, true, length, -1, -1);
-
+        this.alias = false;
         this.typeId = typeId;
         this.typeType = PostgreTypeType.b;
+        String typTypeStr = JDBCUtils.safeGetString(dbResult, "typtype");
         try {
-            String typTypeStr = JDBCUtils.safeGetString(dbResult, "typtype");
             if (typTypeStr != null && !typTypeStr.isEmpty()) {
                 this.typeType = PostgreTypeType.valueOf(typTypeStr.toLowerCase(Locale.ENGLISH));
             }
         } catch (Exception e) {
-            log.debug(e);
+            log.debug("Invalid type type [" + typTypeStr + "] - " + e.getMessage());
         }
         this.typeCategory = PostgreTypeCategory.X;
+        String typCategoryStr = JDBCUtils.safeGetString(dbResult, "typcategory");
         try {
-            String typCategoryStr = JDBCUtils.safeGetString(dbResult, "typcategory");
             if (typCategoryStr != null && !typCategoryStr.isEmpty()) {
                 this.typeCategory = PostgreTypeCategory.valueOf(typCategoryStr.toUpperCase(Locale.ENGLISH));
             }
         } catch (Exception e) {
-            log.debug(e);
+            log.debug("Invalid type category [" + typCategoryStr + "] - " + e.getMessage());
         }
 
         this.dataKind = JDBCDataSource.getDataKind(getName(), valueType);
@@ -146,15 +147,17 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
         this.modInFunc = JDBCUtils.safeGetString(dbResult, "typmodin");
         this.modOutFunc = JDBCUtils.safeGetString(dbResult, "typmodout");
         this.analyzeFunc = JDBCUtils.safeGetString(dbResult, "typanalyze");
+        String typAlignStr = JDBCUtils.safeGetString(dbResult, "typalign");
         try {
-            this.align = PostgreTypeAlign.valueOf(JDBCUtils.safeGetString(dbResult, "typalign"));
+            this.align = PostgreTypeAlign.valueOf(typAlignStr);
         } catch (Exception e) {
-            log.debug(e);
+            log.debug("Invalid type align [" + typAlignStr + "] - " + e.getMessage());
         }
+        String typStorageStr = JDBCUtils.safeGetString(dbResult, "typstorage");
         try {
-            this.storage = PostgreTypeStorage.valueOf(JDBCUtils.safeGetString(dbResult, "typstorage"));
+            this.storage = PostgreTypeStorage.valueOf(typStorageStr);
         } catch (Exception e) {
-            log.debug(e);
+            log.debug("Invalid type storage [" + typStorageStr + "] - " + e.getMessage());
         }
         this.isNotNull = JDBCUtils.safeGetBoolean(dbResult, "typnotnull");
         this.baseTypeId = JDBCUtils.safeGetLong(dbResult, "typbasetype");
@@ -166,8 +169,49 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
         this.attributeCache = hasAttributes() ? new AttributeCache() : null;
 
         if (typeCategory == PostgreTypeCategory.E) {
-            readEnumValues(monitor);
+            readEnumValues(session);
         }
+    }
+
+    PostgreDataType(PostgreDataType realType, String aliasName) {
+        super(realType.getParentObject(), realType);
+        setName(aliasName);
+        this.alias = true;
+
+        this.typeId = realType.typeId;
+        this.typeType = realType.typeType;
+        this.typeCategory = realType.typeCategory;
+        this.dataKind = realType.dataKind;
+
+        this.ownerId = realType.ownerId;
+        this.isByValue = realType.isByValue;
+        this.isPreferred = realType.isPreferred;
+        this.arrayDelimiter = realType.arrayDelimiter;
+        this.classId = realType.classId;
+        this.elementTypeId = realType.elementTypeId;
+        this.arrayItemTypeId = realType.arrayItemTypeId;
+        this.inputFunc = realType.inputFunc;
+        this.outputFunc = realType.outputFunc;
+        this.receiveFunc = realType.receiveFunc;
+        this.sendFunc = realType.sendFunc;
+        this.modInFunc = realType.modInFunc;
+        this.modOutFunc = realType.modOutFunc;
+        this.analyzeFunc = realType.analyzeFunc;
+        this.align = realType.align;
+        this.storage = realType.storage;
+        this.isNotNull = realType.isNotNull;
+        this.baseTypeId = realType.baseTypeId;
+        this.typeMod = realType.typeMod;
+        this.arrayDim = realType.arrayDim;
+        this.collationId = realType.collationId;
+        this.defaultValue = realType.defaultValue;
+
+        this.attributeCache = null;
+        this.enumValues = null;
+    }
+
+    public boolean isAlias() {
+        return alias;
     }
 
     private void readEnumValues(JDBCSession session) throws DBException {
@@ -247,8 +291,8 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
     }
 
     @Property(category = CAT_MAIN, order = 15)
-    public PostgreAuthId getOwner(DBRProgressMonitor monitor) throws DBException {
-        return PostgreUtils.getObjectById(monitor, getDatabase().authIdCache, getDatabase(), ownerId);
+    public PostgreRole getOwner(DBRProgressMonitor monitor) throws DBException {
+        return PostgreUtils.getObjectById(monitor, getDatabase().roleCache, getDatabase(), ownerId);
     }
 
     @Property(category = CAT_MISC)
@@ -387,7 +431,7 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
 
     @NotNull
     @Override
-    public DBCLogicalOperator[] getSupportedOperators() {
+    public DBCLogicalOperator[] getSupportedOperators(DBSTypedObject attribute) {
         if (dataKind == DBPDataKind.STRING) {
             if (typeCategory == PostgreTypeCategory.S) {
                 return new DBCLogicalOperator[]{
@@ -407,7 +451,7 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
                 };
             }
         }
-        return super.getSupportedOperators();
+        return super.getSupportedOperators(attribute);
     }
 
     @Override
@@ -629,6 +673,9 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema> implements Post
                                 valueType = Types.OTHER;
                                 break;
                         }
+                        break;
+                    case V:
+                        valueType = Types.NUMERIC;
                         break;
                     default:
                         valueType = Types.OTHER;

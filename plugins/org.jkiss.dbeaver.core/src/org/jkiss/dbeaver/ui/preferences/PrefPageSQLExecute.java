@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.preferences;
 
@@ -71,10 +70,12 @@ public class PrefPageSQLExecute extends TargetPrefPage
         return
             store.contains(DBeaverPreferences.STATEMENT_INVALIDATE_BEFORE_EXECUTE) ||
             store.contains(DBeaverPreferences.STATEMENT_TIMEOUT) ||
+
             store.contains(DBeaverPreferences.SCRIPT_COMMIT_TYPE) ||
             store.contains(DBeaverPreferences.SCRIPT_ERROR_HANDLING) ||
             store.contains(DBeaverPreferences.SCRIPT_COMMIT_LINES) ||
             store.contains(DBeaverPreferences.SCRIPT_FETCH_RESULT_SETS) ||
+
             store.contains(ModelPreferences.SCRIPT_STATEMENT_DELIMITER) ||
             store.contains(ModelPreferences.SCRIPT_IGNORE_NATIVE_DELIMITER) ||
             store.contains(ModelPreferences.SCRIPT_STATEMENT_DELIMITER_BLANK) ||
@@ -241,9 +242,10 @@ public class PrefPageSQLExecute extends TargetPrefPage
         store.setToDefault(DBeaverPreferences.STATEMENT_TIMEOUT);
 
         store.setToDefault(DBeaverPreferences.SCRIPT_COMMIT_TYPE);
-        store.setToDefault(DBeaverPreferences.SCRIPT_COMMIT_LINES);
         store.setToDefault(DBeaverPreferences.SCRIPT_ERROR_HANDLING);
+        store.setToDefault(DBeaverPreferences.SCRIPT_COMMIT_LINES);
         store.setToDefault(DBeaverPreferences.SCRIPT_FETCH_RESULT_SETS);
+
         store.setToDefault(SQLPreferenceConstants.RESET_CURSOR_ON_EXECUTE);
 
         store.setToDefault(ModelPreferences.SCRIPT_STATEMENT_DELIMITER);
@@ -252,6 +254,11 @@ public class PrefPageSQLExecute extends TargetPrefPage
         store.setToDefault(ModelPreferences.SQL_PARAMETERS_ENABLED);
         store.setToDefault(ModelPreferences.SQL_ANONYMOUS_PARAMETERS_ENABLED);
         store.setToDefault(ModelPreferences.SQL_ANONYMOUS_PARAMETERS_MARK);
+        store.setToDefault(ModelPreferences.SCRIPT_STATEMENT_DELIMITER_BLANK);
+
+        store.setToDefault(ModelPreferences.SQL_NAMED_PARAMETERS_PREFIX);
+        store.setToDefault(SQLPreferenceConstants.BEEP_ON_QUERY_END);
+        store.setToDefault(SQLPreferenceConstants.REFRESH_DEFAULTS_AFTER_EXECUTE);
     }
 
     @Override

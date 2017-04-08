@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls;
 
@@ -24,20 +23,22 @@ import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.ControlAdapter;
 import org.eclipse.swt.events.ControlEvent;
-import org.eclipse.swt.events.DisposeEvent;
-import org.eclipse.swt.events.DisposeListener;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
+import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.*;
 import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.ui.ILabelProviderEx;
 import org.jkiss.dbeaver.ui.ILazyLabelProvider;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.dialogs.BaseDialog;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.Array;
 import java.text.Collator;
+import java.text.NumberFormat;
 import java.util.*;
 import java.util.List;
 
@@ -54,9 +55,8 @@ public class ViewerColumnController {
     private final ColumnViewer viewer;
     private final List<ColumnInfo> columns = new ArrayList<>();
     private boolean clickOnHeader;
-    private boolean isPacking;
+    private boolean isPacking, isInitializing;
 
-    private transient DisposeListener disposeListener;
     private transient Listener menuListener;
 
     public static ViewerColumnController getFromControl(Control control)
@@ -70,13 +70,6 @@ public class ViewerColumnController {
         this.viewer = viewer;
         final Control control = this.viewer.getControl();
         control.setData(DATA_KEY, this);
-        disposeListener = new DisposeListener() {
-            @Override
-            public void widgetDisposed(DisposeEvent e) {
-                saveColumnConfig();
-            }
-        };
-        control.addDisposeListener(disposeListener);
 
         if (control instanceof Tree || control instanceof Table) {
             menuListener = new Listener() {
@@ -84,10 +77,14 @@ public class ViewerColumnController {
                 public void handleEvent(Event event) {
                     Point pt = control.getDisplay().map(null, control, new Point(event.x, event.y));
                     Rectangle clientArea = ((Composite) control).getClientArea();
-                    if (control instanceof Tree) {
-                        clickOnHeader = clientArea.y <= pt.y && pt.y < (clientArea.y + ((Tree) control).getHeaderHeight());
+                    if (RuntimeUtils.isPlatformMacOS()) {
+                        clickOnHeader = pt.y < 0;
                     } else {
-                        clickOnHeader = clientArea.y <= pt.y && pt.y < (clientArea.y + ((Table) control).getHeaderHeight());
+                        if (control instanceof Tree) {
+                            clickOnHeader = clientArea.y <= pt.y && pt.y < (clientArea.y + ((Tree) control).getHeaderHeight());
+                        } else {
+                            clickOnHeader = clientArea.y <= pt.y && pt.y < (clientArea.y + ((Table) control).getHeaderHeight());
+                        }
                     }
                 }
             };
@@ -99,10 +96,6 @@ public class ViewerColumnController {
         clearColumns();
         final Control control = this.viewer.getControl();
         if (!control.isDisposed()) {
-            if (disposeListener != null) {
-                control.removeDisposeListener(disposeListener);
-                disposeListener = null;
-            }
             if (menuListener != null) {
                 control.removeListener(SWT.MenuDetect, menuListener);
                 menuListener = null;
@@ -128,10 +121,10 @@ public class ViewerColumnController {
 
     public void addColumn(String name, String description, int style, boolean defaultVisible, boolean required, CellLabelProvider labelProvider)
     {
-        addColumn(name, description, style, defaultVisible, required, null, labelProvider, null);
+        addColumn(name, description, style, defaultVisible, required, false, null, labelProvider, null);
     }
 
-    public void addColumn(String name, String description, int style, boolean defaultVisible, boolean required, Object userData, CellLabelProvider labelProvider, EditingSupport editingSupport)
+    public void addColumn(String name, String description, int style, boolean defaultVisible, boolean required, boolean isNumeric, Object userData, CellLabelProvider labelProvider, EditingSupport editingSupport)
     {
         columns.add(
             new ColumnInfo(
@@ -140,6 +133,7 @@ public class ViewerColumnController {
                 style,
                 defaultVisible,
                 required,
+                isNumeric,
                 userData,
                 labelProvider,
                 editingSupport,
@@ -175,6 +169,7 @@ public class ViewerColumnController {
     {
         final Control control = viewer.getControl();
         control.setRedraw(false);
+        isInitializing = true;
         try {
             boolean needRefresh = false;
             for (ColumnInfo columnInfo : columns) {
@@ -207,6 +202,7 @@ public class ViewerColumnController {
             }
         } finally {
             control.setRedraw(true);
+            isInitializing = false;
         }
     }
 
@@ -248,7 +244,10 @@ public class ViewerColumnController {
     private void createVisibleColumns()
     {
         boolean hasLazyColumns = false;
-        for (final ColumnInfo columnInfo : getVisibleColumns()) {
+        List<ColumnInfo> visibleColumns = getVisibleColumns();
+        for (int i = 0; i < visibleColumns.size(); i++) {
+            final ColumnInfo columnInfo = visibleColumns.get(i);
+            columnInfo.order = i;
             final Item colItem;
             ViewerColumn viewerColumn;
             if (viewer instanceof TreeViewer) {
@@ -266,11 +265,13 @@ public class ViewerColumnController {
                     @Override
                     public void controlResized(ControlEvent e) {
                         columnInfo.width = column.getWidth();
+                        saveColumnConfig();
                     }
+
                     @Override
                     public void controlMoved(ControlEvent e) {
-                        if (e.getSource() instanceof TreeColumn) {
-                            updateColumnOrder(column.getParent().getColumnOrder());
+                        if (!isInitializing && e.getSource() instanceof TreeColumn) {
+                            updateColumnOrder(column, column.getParent().getColumnOrder());
                         }
                     }
                 });
@@ -288,14 +289,15 @@ public class ViewerColumnController {
                 }
                 column.addControlListener(new ControlAdapter() {
                     @Override
-                    public void controlResized(ControlEvent e)
-                    {
+                    public void controlResized(ControlEvent e) {
                         columnInfo.width = column.getWidth();
+                        saveColumnConfig();
                     }
+
                     @Override
                     public void controlMoved(ControlEvent e) {
-                        if (e.getSource() instanceof TableColumn) {
-                            updateColumnOrder(column.getParent().getColumnOrder());
+                        if (!isInitializing && e.getSource() instanceof TableColumn) {
+                            updateColumnOrder(column, column.getParent().getColumnOrder());
                         }
                     }
                 });
@@ -400,19 +402,22 @@ public class ViewerColumnController {
         saveColumnConfig();
     }
 
-    private void updateColumnOrder(int[] order) {
+    private void updateColumnOrder(Item column, int[] order) {
         if (isPacking) {
             return;
         }
-        final List<ColumnInfo> visibleColumns = getVisibleColumns();
-        if (visibleColumns.size() != order.length) {
-            log.debug("Internal error: visible column size (" + visibleColumns.size() + ") doesn't match order length (" + order.length + ")");
-            return;
-        }
+        ColumnInfo columnInfo = (ColumnInfo) column.getData();
+        boolean updated = false;
         for (int i = 0; i < order.length; i++) {
-            visibleColumns.get(i).order = order[i];
+            if (order[i] == columnInfo.order) {
+                columnInfo.order = i;
+                updated = true;
+                break;
+            }
         }
-        saveColumnConfig();
+        if (updated) {
+            saveColumnConfig();
+        }
     }
 
     private void saveColumnConfig()
@@ -432,6 +437,7 @@ public class ViewerColumnController {
         final int style;
         final boolean defaultVisible;
         final boolean required;
+        final boolean numeric;
         final Object userData;
         final CellLabelProvider labelProvider;
         final EditingSupport editingSupport;
@@ -439,23 +445,19 @@ public class ViewerColumnController {
         Item column;
         SortListener sortListener;
 
-        private ColumnInfo(String name, String description, int style, boolean defaultVisible, boolean required, Object userData, CellLabelProvider labelProvider, EditingSupport editingSupport, int order)
+        private ColumnInfo(String name, String description, int style, boolean defaultVisible, boolean required, boolean numeric, Object userData, CellLabelProvider labelProvider, EditingSupport editingSupport, int order)
         {
             this.name = name;
             this.description = description;
             this.style = style;
             this.defaultVisible = defaultVisible;
             this.required = required;
+            this.numeric = numeric;
             this.userData = userData;
             this.visible = defaultVisible;
             this.labelProvider = labelProvider;
             this.editingSupport = editingSupport;
             this.order = order;
-        }
-
-        @Override
-        public String toString() {
-            return name + ":" + order;
         }
     }
 
@@ -487,8 +489,19 @@ public class ViewerColumnController {
 
             List<ColumnInfo> orderedList = new ArrayList<>(columns);
             Collections.sort(orderedList, new ColumnInfoComparator());
-            colTable = new Table(composite, SWT.BORDER | SWT.CHECK);
+            colTable = new Table(composite, SWT.BORDER | SWT.CHECK | SWT.H_SCROLL | SWT.V_SCROLL);
+            colTable.setLayoutData(new GridData(GridData.FILL_BOTH));
             colTable.setLinesVisible(true);
+            colTable.addListener(SWT.Selection,new Listener() {
+                public void handleEvent(Event event) {
+                    if( event.detail == SWT.CHECK ) {
+                        if (((TableItem)event.item).getGrayed()) {
+                            ((TableItem)event.item).setChecked(true);
+                            event.doit = false;
+                        }
+                    }
+                }
+            });
             final TableColumn nameColumn = new TableColumn(colTable, SWT.LEFT);
             nameColumn.setText("Name");
             final TableColumn descColumn = new TableColumn(colTable, SWT.LEFT);
@@ -502,9 +515,18 @@ public class ViewerColumnController {
                     colItem.setText(1, columnInfo.description);
                 }
                 colItem.setChecked(columnInfo.visible);
+                if (columnInfo.required) {
+                    colItem.setGrayed(true);
+                }
             }
             nameColumn.pack();
+            if (nameColumn.getWidth() > 300) {
+                nameColumn.setWidth(300);
+            }
             descColumn.pack();
+            if (descColumn.getWidth() > 400) {
+                descColumn.setWidth(400);
+            }
 
             return parent;
         }
@@ -558,7 +580,7 @@ public class ViewerColumnController {
             sortViewer(column, sortDirection);
         }
 
-        private void sortViewer(Item column, final int sortDirection) {
+        private void sortViewer(final Item column, final int sortDirection) {
             Collator collator = Collator.getInstance();
             if (viewer instanceof TreeViewer) {
                 ((TreeViewer)viewer).getTree().setSortColumn((TreeColumn) column);
@@ -568,14 +590,23 @@ public class ViewerColumnController {
                 ((TableViewer)viewer).getTable().setSortDirection(sortDirection);
             }
             final ILabelProvider labelProvider = (ILabelProvider)columnInfo.labelProvider;
+            final ILabelProviderEx exLabelProvider = labelProvider instanceof ILabelProviderEx ? (ILabelProviderEx)labelProvider : null;
 
-            viewer.setSorter(new ViewerSorter(collator) {
+            viewer.setComparator(new ViewerComparator(collator) {
+                private final NumberFormat numberFormat = NumberFormat.getInstance();
                 @Override
                 public int compare(Viewer v, Object e1, Object e2)
                 {
                     int result;
-                    String value1 = labelProvider.getText(e1);
-                    String value2 = labelProvider.getText(e2);
+                    String value1;
+                    String value2;
+                    if (exLabelProvider != null) {
+                        value1 = exLabelProvider.getText(e1, false);
+                        value2 = exLabelProvider.getText(e2, false);
+                    } else {
+                        value1 = labelProvider.getText(e1);
+                        value2 = labelProvider.getText(e2);
+                    }
                     if (value1 == null && value2 == null) {
                         result = 0;
                     } else if (value1 == null) {
@@ -583,12 +614,23 @@ public class ViewerColumnController {
                     } else if (value2 == null) {
                         result = 1;
                     } else {
-                        try {
-                            return (int)(Long.parseLong(value1) - Long.parseLong(value2));
-                        } catch (NumberFormatException e) {
-                            // not numbers
+                        if (columnInfo.numeric) {
+                            try {
+                                final Number num1 = numberFormat.parse(value1);
+                                final Number num2 = numberFormat.parse(value2);
+                                if (num1.getClass() == num2.getClass() && num1 instanceof Comparable) {
+                                    result = ((Comparable) num1).compareTo(num2);
+                                } else {
+                                    // Dunno how to compare
+                                    result = 0;
+                                }
+                            } catch (Exception e) {
+                                // not numbers
+                                result = value1.compareToIgnoreCase(value2);
+                            }
+                        } else {
+                            result = value1.compareToIgnoreCase(value2);
                         }
-                        result = value1.compareToIgnoreCase(value2);
                     }
                     return sortDirection == SWT.DOWN ? result : -result;
                 }

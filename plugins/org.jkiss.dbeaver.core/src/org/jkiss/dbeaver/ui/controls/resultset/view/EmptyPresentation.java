@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.controls.resultset.view;
@@ -37,8 +36,8 @@ import org.jkiss.dbeaver.core.CoreCommands;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
 import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.controls.resultset.AbstractPresentation;
 import org.jkiss.dbeaver.ui.controls.resultset.IResultSetController;
-import org.jkiss.dbeaver.ui.controls.resultset.IResultSetPresentation;
 import org.jkiss.dbeaver.ui.controls.resultset.ResultSetCopySettings;
 import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
 
@@ -46,14 +45,13 @@ import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
  * Empty presentation.
  * Used when RSV has no results (initially).
  */
-public class EmptyPresentation implements IResultSetPresentation {
+public class EmptyPresentation extends AbstractPresentation {
 
-    private IResultSetController controller;
     private Composite placeholder;
 
     @Override
     public void createPresentation(@NotNull final IResultSetController controller, @NotNull Composite parent) {
-        this.controller = controller;
+        super.createPresentation(controller, parent);
 
         UIUtils.createHorizontalLine(parent);
         placeholder = new Canvas(parent, SWT.NONE);
@@ -79,21 +77,19 @@ public class EmptyPresentation implements IResultSetPresentation {
                     return;
                 }
                 e.gc.setFont(largeFont);
-                UIUtils.drawMessageOverControl(placeholder, e, "No Data", -10);
+                int fontSize = largeFont.getFontData()[0].getHeight();
+                UIUtils.drawMessageOverControl(placeholder, e, "No Data", -(fontSize / 2));
                 e.gc.setFont(normalFont);
                 if (controller.getDataContainer() instanceof SQLEditor.QueryResultsContainer) {
                     String execQuery = ActionUtils.findCommandDescription(CoreCommands.CMD_EXECUTE_STATEMENT, controller.getSite(), true);
                     String execScript = ActionUtils.findCommandDescription(CoreCommands.CMD_EXECUTE_SCRIPT, controller.getSite(), true);
-                    UIUtils.drawMessageOverControl(placeholder, e, "Execute query (" + execQuery + ") or script (" + execScript + ") to see results", 20);
+                    UIUtils.drawMessageOverControl(placeholder, e, "Execute query (" + execQuery + ") or script (" + execScript + ") to see results", fontSize + fontSize / 3);
                 }
             }
 
         });
-    }
 
-    @Override
-    public IResultSetController getController() {
-        return controller;
+        trackPresentationControl();
     }
 
     @Override

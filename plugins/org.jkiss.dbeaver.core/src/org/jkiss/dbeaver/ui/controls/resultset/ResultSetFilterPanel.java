@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.controls.resultset;
@@ -48,7 +47,9 @@ import org.jkiss.dbeaver.model.data.DBDDataFilter;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.exec.DBCStatistics;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
-import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.DBRRunnableWithProgress;
+import org.jkiss.dbeaver.model.runtime.SystemJob;
 import org.jkiss.dbeaver.model.sql.SQLSyntaxManager;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.DBSDataContainer;
@@ -59,11 +60,12 @@ import org.jkiss.dbeaver.ui.editors.StringEditorInput;
 import org.jkiss.dbeaver.ui.editors.SubEditorSite;
 import org.jkiss.dbeaver.ui.editors.sql.SQLEditorBase;
 import org.jkiss.dbeaver.ui.editors.sql.handlers.OpenHandler;
-import org.jkiss.dbeaver.ui.editors.sql.syntax.SQLCompletionProposal;
+import org.jkiss.dbeaver.ui.editors.sql.syntax.SQLContextInformer;
 import org.jkiss.dbeaver.ui.editors.sql.syntax.SQLWordPartDetector;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -288,10 +290,15 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
     }
 
     private void enablePanelControls(boolean enable) {
-        filterToolbar.setEnabled(enable);
-        refreshPanel.setEnabled(enable);
-        historyPanel.setEnabled(enable);
-        filtersText.setEditable(enable && viewer.supportsDataFilter());
+        setRedraw(false);
+        try {
+            filterToolbar.setEnabled(enable);
+            refreshPanel.setEnabled(enable);
+            historyPanel.setEnabled(enable);
+            filtersText.setEditable(enable && viewer.supportsDataFilter());
+        } finally {
+            setRedraw(true);
+        }
     }
 
     private boolean isFiltersAvailable() {
@@ -512,7 +519,7 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
         editor.createPartControl(editorPH);
         editor.reloadSyntaxRules();
         StyledText textWidget = editor.getTextViewer().getTextWidget();
-        textWidget.setAlwaysShowScrollBars(false);
+        //textWidget.setAlwaysShowScrollBars(false);
 
         panel.setBackground(textWidget.getBackground());
         panel.addDisposeListener(new DisposeListener() {
@@ -549,19 +556,29 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
         }
         SQLWordPartDetector wordDetector = new SQLWordPartDetector(new Document(contents), syntaxManager, position);
         final String word = wordDetector.getFullWord().toLowerCase(Locale.ENGLISH);
-        List<IContentProposal> proposals = new ArrayList<>();
-        for (DBDAttributeBinding attribute : viewer.getModel().getAttributes()) {
-            final String name = attribute.getName();
-            if (CommonUtils.isEmpty(word) || name.toLowerCase(Locale.ENGLISH).startsWith(word)) {
-                final String content = name.substring(word.length()) + " ";
-                proposals.add(
-                    new ContentProposal(
-                        content,
-                        attribute.getName(),
-                        SQLCompletionProposal.makeObjectDescription(VoidProgressMonitor.INSTANCE, attribute.getAttribute(), false),
-                        content.length()));
+        final List<IContentProposal> proposals = new ArrayList<>();
+
+        final DBRRunnableWithProgress reader = new DBRRunnableWithProgress() {
+            @Override
+            public void run(DBRProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
+                for (DBDAttributeBinding attribute : viewer.getModel().getAttributes()) {
+                    final String name = attribute.getName();
+                    if (CommonUtils.isEmpty(word) || name.toLowerCase(Locale.ENGLISH).startsWith(word)) {
+                        final String content = name.substring(word.length()) + " ";
+                        proposals.add(
+                                new ContentProposal(
+                                        content,
+                                        attribute.getName(),
+                                        SQLContextInformer.makeObjectDescription(monitor, attribute.getAttribute(), false),
+                                        content.length()));
+                    }
+                }
             }
-        }
+        };
+        SystemJob searchJob = new SystemJob("Extract attribute proposals", reader);
+        searchJob.schedule();
+        UIUtils.waitJobCompletion(searchJob);
+
         return proposals.toArray(new IContentProposal[proposals.size()]);
     }
 
@@ -615,8 +632,13 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
                 }
 
                 @Override
-                public void mouseDown(MouseEvent e) {
-                    showObjectInfoPopup(e);
+                public void mouseDown(final MouseEvent e) {
+                    DBeaverUI.asyncExec(new Runnable() {
+                        @Override
+                        public void run() {
+                            showObjectInfoPopup(e);
+                        }
+                    });
                 }
             });
         }
@@ -701,13 +723,16 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
             e.gc.setClipping(e.x, e.y, e.width - 8, e.height);
 
             int textOffset = 2;
+            int panelHeight = getSize().y;
             DBPImage activeObjectImage = getActiveObjectImage();
             if (activeObjectImage != null) {
                 Image icon = DBeaverIcons.getImage(activeObjectImage);
-                e.gc.drawImage(icon, 2, 3);
-                textOffset += icon.getBounds().width + 2;
+                Rectangle iconBounds = icon.getBounds();
+                e.gc.drawImage(icon, 2, (panelHeight - iconBounds.height) / 2);
+                textOffset += iconBounds.width + 2;
             }
-            e.gc.drawText(activeDisplayName, textOffset, 3);
+            int textHeight = e.gc.getFontMetrics().getHeight();
+            e.gc.drawText(activeDisplayName, textOffset, (panelHeight - textHeight) / 2);
             e.gc.setClipping((Rectangle) null);
         }
     }

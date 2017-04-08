@@ -1,27 +1,26 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.impl.jdbc.data;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ModelPreferences;
-import org.jkiss.dbeaver.model.app.DBPPlatform;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.app.DBPPlatform;
 import org.jkiss.dbeaver.model.data.DBDContent;
 import org.jkiss.dbeaver.model.data.DBDContentCached;
 import org.jkiss.dbeaver.model.data.DBDContentStorage;
@@ -34,7 +33,6 @@ import org.jkiss.dbeaver.model.impl.TemporaryContentStorage;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
 import org.jkiss.dbeaver.utils.ContentUtils;
-import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.MimeTypes;
 import org.jkiss.utils.CommonUtils;
 
@@ -67,7 +65,7 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
         }
         try {
             return clob.length();
-        } catch (SQLException e) {
+        } catch (Throwable e) {
             throw new DBCException(e, dataSource);
         }
     }
@@ -92,7 +90,7 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
                 }
                 catch (IOException e) {
                     throw new DBCException("IO error while reading content", e);
-                } catch (SQLException e) {
+                } catch (Throwable e) {
                     throw new DBCException(e, dataSource);
                 }
             } else {
@@ -104,16 +102,16 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
                 catch (IOException e) {
                     throw new DBCException("Can't create temp file", e);
                 }
-                try (Writer os = new OutputStreamWriter(new FileOutputStream(tempFile), GeneralUtils.DEFAULT_ENCODING)) {
+                try (Writer os = new OutputStreamWriter(new FileOutputStream(tempFile), getDefaultEncoding())) {
                     ContentUtils.copyStreams(clob.getCharacterStream(), contentLength, os, monitor);
                 } catch (IOException e) {
                     ContentUtils.deleteTempFile(tempFile);
                     throw new DBCException("IO error while copying content", e);
-                } catch (SQLException e) {
+                } catch (Throwable e) {
                     ContentUtils.deleteTempFile(tempFile);
                     throw new DBCException(e, dataSource);
                 }
-                this.storage = new TemporaryContentStorage(platform, tempFile);
+                this.storage = new TemporaryContentStorage(platform, tempFile, getDefaultEncoding());
             }
             // Free lob - we don't need it anymore
             releaseClob();
@@ -135,7 +133,7 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
                 clob.free();
             } catch (Throwable e) {
                 // Log as warning only if it is an exception.
-                log.debug(e);
+                log.debug("Error freeing CLOB: " + e.getClass().getName() + ": " + e.getMessage());
             }
             clob = null;
         }
@@ -197,8 +195,8 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
         catch (SQLException e) {
             throw new DBCException(e, dataSource);
         }
-        catch (Exception e) {
-            throw new DBCException("IO error while reading content", e);
+        catch (Throwable e) {
+            throw new DBCException("IO error while binding content", e);
         }
     }
 

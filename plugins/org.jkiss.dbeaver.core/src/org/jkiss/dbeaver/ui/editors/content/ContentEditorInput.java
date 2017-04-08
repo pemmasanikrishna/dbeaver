@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.content;
 
@@ -26,12 +25,15 @@ import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IPathEditorInput;
 import org.eclipse.ui.IPersistableElement;
+import org.eclipse.ui.PartInitException;
+import org.eclipse.ui.editors.text.IEncodingSupport;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.DBPContextProvider;
+import org.jkiss.dbeaver.model.DBValueFormatting;
 import org.jkiss.dbeaver.model.data.DBDContent;
 import org.jkiss.dbeaver.model.data.DBDContentCached;
 import org.jkiss.dbeaver.model.data.DBDContentStorage;
@@ -55,7 +57,7 @@ import java.io.*;
 /**
  * ContentEditorInput
  */
-public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
+public class ContentEditorInput implements IPathEditorInput, DBPContextProvider, IEncodingSupport
 {
     private static final Log log = Log.getLog(ContentEditorInput.class);
 
@@ -64,7 +66,7 @@ public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
     private IEditorPart defaultPart;
     private File contentFile;
     private boolean contentDetached = false;
-    private String fileCharset = GeneralUtils.DEFAULT_ENCODING;
+    private String fileCharset;
 
     public ContentEditorInput(
         IValueController valueController,
@@ -76,6 +78,7 @@ public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
         this.valueController = valueController;
         this.editorParts = editorParts;
         this.defaultPart = defaultPart;
+        this.fileCharset = getDefaultEncoding();
         this.prepareContent(monitor);
     }
 
@@ -148,7 +151,7 @@ public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
     public <T> T getAdapter(Class<T> adapter)
     {
         if (adapter == IStorage.class) {
-            return adapter.cast(new LocalFileStorage(contentFile));
+            return adapter.cast(new LocalFileStorage(contentFile, fileCharset));
         }
         return null;
     }
@@ -311,11 +314,11 @@ public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
             // Create new storage and pass it to content
             try (FileInputStream is = new FileInputStream(contentFile)) {
                 if (storage instanceof StringContentStorage) {
-                    try (Reader reader = new InputStreamReader(is, GeneralUtils.getDefaultFileEncoding())) {
+                    try (Reader reader = new InputStreamReader(is, fileCharset)) {
                         storage = StringContentStorage.createFromReader(reader);
                     }
                 } else {
-                    storage = BytesContentStorage.createFromStream(is, contentFile.length(), GeneralUtils.getDefaultFileEncoding());
+                    storage = BytesContentStorage.createFromStream(is, contentFile.length(), fileCharset);
                 }
                 //StringContentStorage.
                 contentDetached = content.updateContents(localMonitor, storage);
@@ -324,7 +327,7 @@ public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
             }
         } else {
             // Create new storage and pass it to content
-            storage = new TemporaryContentStorage(DBeaverCore.getInstance(), contentFile);
+            storage = new TemporaryContentStorage(DBeaverCore.getInstance(), contentFile, fileCharset);
             contentDetached = content.updateContents(localMonitor, storage);
         }
     }
@@ -335,11 +338,23 @@ public class ContentEditorInput implements IPathEditorInput, DBPContextProvider
         return valueController.getExecutionContext();
     }
 
-    public String getFileCharset() {
+    public String getEncoding() {
         return fileCharset;
     }
 
-    public void setFileCharset(String fileCharset) {
+    @Override
+    public String getDefaultEncoding() {
+        return DBValueFormatting.getDefaultBinaryFileEncoding(valueController.getExecutionContext().getDataSource());
+    }
+
+    public void setEncoding(String fileCharset) {
         this.fileCharset = fileCharset;
+        for (IEditorPart part : editorParts) {
+            try {
+                part.init(part.getEditorSite(), this);
+            } catch (PartInitException e) {
+                log.error("Error refreshing content editor part " + part, e);
+            }
+        }
     }
 }

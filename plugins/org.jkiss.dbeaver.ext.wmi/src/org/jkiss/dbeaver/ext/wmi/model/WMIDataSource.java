@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.wmi.model;
 
@@ -27,7 +26,9 @@ import org.jkiss.dbeaver.model.DBPDataSourceInfo;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
 import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.impl.AbstractExecutionContext;
 import org.jkiss.dbeaver.model.meta.Association;
+import org.jkiss.dbeaver.model.qm.QMUtils;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLDataSource;
 import org.jkiss.dbeaver.model.sql.SQLDialect;
@@ -44,15 +45,19 @@ import java.util.Collections;
  */
 public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDataSource, IAdaptable//, DBSObjectContainer, DBSObjectSelector
 {
-    private DBPDataSourceContainer container;
+    private final DBPDataSourceContainer container;
     private WMINamespace rootNamespace;
-    private SQLDialect dialect;
+    private final SQLDialect dialect;
+    private final long id;
 
     public WMIDataSource(DBPDataSourceContainer container)
         throws DBException
     {
         this.container = container;
         this.dialect = new WMIDialect();
+        this.id = AbstractExecutionContext.generateContextId();
+
+        QMUtils.getDefaultHandler().handleContextOpen(this, false);
     }
 
     @NotNull
@@ -79,6 +84,11 @@ public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDat
     @Override
     public DBCExecutionContext[] getAllContexts() {
         return new DBCExecutionContext[] { this };
+    }
+
+    @Override
+    public long getContextId() {
+        return this.id;
     }
 
     @NotNull
@@ -119,7 +129,7 @@ public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDat
     }
 
     @Override
-    public void isContextAlive(DBRProgressMonitor monitor) throws DBException {
+    public void checkContextAlive(DBRProgressMonitor monitor) throws DBException {
         // do nothing
     }
 
@@ -132,7 +142,7 @@ public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDat
 
     @NotNull
     @Override
-    public InvalidateResult invalidateContext(@NotNull DBRProgressMonitor monitor) throws DBException
+    public InvalidateResult invalidateContext(@NotNull DBRProgressMonitor monitor, boolean closeOnFailure) throws DBException
     {
         throw new DBException("Connection invalidate not supported");
     }
@@ -158,8 +168,7 @@ public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDat
     }
 
     @Override
-    public void close()
-    {
+    public void close() {
         if (rootNamespace != null) {
             rootNamespace.close();
             if (rootNamespace.service != null) {
@@ -167,6 +176,14 @@ public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDat
             }
             rootNamespace = null;
         }
+
+        QMUtils.getDefaultHandler().handleContextClose(this);
+    }
+
+    @Override
+    public void shutdown(DBRProgressMonitor monitor)
+    {
+        this.close();
     }
 
     @Association
@@ -204,4 +221,5 @@ public class WMIDataSource implements DBPDataSource, DBCExecutionContext, SQLDat
     public boolean isPersisted() {
         return true;
     }
+
 }

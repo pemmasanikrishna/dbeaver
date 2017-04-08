@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.data.registry;
@@ -23,6 +22,7 @@ import org.eclipse.core.runtime.IExtensionRegistry;
 import org.eclipse.core.runtime.Platform;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.data.DBDContent;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -67,7 +67,7 @@ public class ValueManagerRegistry {
     }
 
     @NotNull
-    public IValueManager getManager(@Nullable DBPDataSourceContainer dataSource, @NotNull DBSTypedObject dataKind, @NotNull Class<?> valueType) {
+    public IValueManager getManager(@Nullable DBPDataSource dataSource, @NotNull DBSTypedObject dataKind, @NotNull Class<?> valueType) {
         // Check starting from most restrictive to less restrictive
         IValueManager manager = findManager(dataSource, dataKind, valueType, true, true);
         if (manager == null) {
@@ -85,7 +85,7 @@ public class ValueManagerRegistry {
         return manager;
     }
 
-    private IValueManager findManager(@Nullable DBPDataSourceContainer dataSource, DBSTypedObject typedObject, Class<?> valueType, boolean checkDataSource, boolean checkType) {
+    private IValueManager findManager(@Nullable DBPDataSource dataSource, DBSTypedObject typedObject, Class<?> valueType, boolean checkDataSource, boolean checkType) {
         for (ValueManagerDescriptor manager : managers) {
             if (manager.supportsType(dataSource, typedObject, valueType, checkDataSource, checkType)) {
                 return manager.getInstance();
@@ -95,7 +95,7 @@ public class ValueManagerRegistry {
     }
 
     @NotNull
-    public static IValueManager findValueManager(@Nullable DBPDataSourceContainer dataSource, @NotNull DBSTypedObject typedObject, @NotNull Class<?> valueType) {
+    public static IValueManager findValueManager(@Nullable DBPDataSource dataSource, @NotNull DBSTypedObject typedObject, @NotNull Class<?> valueType) {
         return getInstance().getManager(dataSource, typedObject, valueType);
     }
 

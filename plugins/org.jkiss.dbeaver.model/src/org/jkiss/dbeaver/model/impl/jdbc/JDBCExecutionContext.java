@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.impl.jdbc;
 
@@ -58,12 +57,12 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
 
     public void connect(DBRProgressMonitor monitor) throws DBCException
     {
-        connect(monitor, null, null, false);
+        connect(monitor, null, null, false, true);
     }
 
-    void connect(@NotNull DBRProgressMonitor monitor, Boolean autoCommit, @Nullable Integer txnLevel, boolean forceActiveObject) throws DBCException
+    void connect(@NotNull DBRProgressMonitor monitor, Boolean autoCommit, @Nullable Integer txnLevel, boolean forceActiveObject, boolean addContext) throws DBCException
     {
-        if (connection != null) {
+        if (connection != null && addContext) {
             log.error("Reopening not-closed connection");
             close();
         }
@@ -74,7 +73,7 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
             if (this.connection == null) {
                 throw new DBCException("Null connection returned");
             }
-
+            monitor.subTask("Set connection defaults");
             // Get defaults from preferences
             if (autoCommit == null) {
                 autoCommit = dataSource.getContainer().isDefaultAutoCommit();
@@ -88,24 +87,24 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
                 connection.setAutoCommit(autoCommit);
                 this.autoCommit = autoCommit;
             } catch (Throwable e) {
-                log.warn("Can't set auto-commit state", e); //$NON-NLS-1$
+                log.debug("Can't set auto-commit state: " + e.getMessage()); //$NON-NLS-1$
             }
             {
                 // Cache auto-commit
                 try {
                     this.autoCommit = connection.getAutoCommit();
                 } catch (Throwable e) {
-                    log.warn("Can't check auto-commit state", e); //$NON-NLS-1$
+                    log.debug("Can't check auto-commit state", e); //$NON-NLS-1$
                     this.autoCommit = false;
                 }
             }
 
             if (!this.autoCommit && txnLevel != null) {
                 try {
-                    connection.setTransactionIsolation(txnLevel);
+                    this.connection.setTransactionIsolation(txnLevel);
                     this.transactionIsolationLevel = txnLevel;
                 } catch (Throwable e) {
-                    log.warn("Can't set transaction isolation level", e); //$NON-NLS-1$
+                    log.debug("Can't set transaction isolation level", e); //$NON-NLS-1$
                 }
             }
 
@@ -122,8 +121,22 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
                 log.error("Error while initializing context state", e);
             }
 
-            // Add self to context list
-            this.dataSource.addContext(this);
+            try {
+                // Commit transaction. We can perform init SQL which potentially may lock some resources
+                // Let's free them.
+                if (!this.autoCommit) {
+                    try (JDBCSession session = openSession(monitor, DBCExecutionPurpose.META, "End transaction")) {
+                        session.commit();
+                    }
+                }
+            } catch (Throwable e) {
+                log.error("Error ending transaction after context initialize", e);
+            }
+
+            if (addContext) {
+                // Add self to context list
+                this.dataSource.addContext(this);
+            }
         } finally {
             DBExecUtils.finishContextInitiation(this);
         }
@@ -153,7 +166,7 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
     }
 
     @Override
-    public void isContextAlive(DBRProgressMonitor monitor) throws DBException {
+    public void checkContextAlive(DBRProgressMonitor monitor) throws DBException {
         if (!JDBCUtils.isConnectionAlive(getDataSource(), getConnection())) {
             throw new DBCException("Connection is dead");
         }
@@ -167,7 +180,7 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
 
     @NotNull
     @Override
-    public InvalidateResult invalidateContext(@NotNull DBRProgressMonitor monitor)
+    public InvalidateResult invalidateContext(@NotNull DBRProgressMonitor monitor, boolean closeOnFailure)
         throws DBException
     {
         if (this.connection == null) {
@@ -178,8 +191,12 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
         if (!JDBCUtils.isConnectionAlive(getDataSource(), getConnection())) {
             Boolean prevAutocommit = autoCommit;
             Integer txnLevel = transactionIsolationLevel;
-            close();
-            connect(monitor, prevAutocommit, txnLevel, true);
+            boolean addNewContext = false;
+            if (closeOnFailure) {
+                close();
+                addNewContext = true;
+            }
+            connect(monitor, prevAutocommit, txnLevel, true, addNewContext);
 
             return InvalidateResult.RECONNECTED;
         }
@@ -192,16 +209,15 @@ public class JDBCExecutionContext extends AbstractExecutionContext<JDBCDataSourc
         // [JDBC] Need sync here because real connection close could take some time
         // while UI may invoke callbacks to operate with connection
         synchronized (this) {
-            if (connection != null) {
-                this.dataSource.closeConnection(connection);
-                connection = null;
+            if (this.connection != null) {
+                this.dataSource.closeConnection(connection, purpose);
             }
+            this.connection = null;
             super.closeContext();
         }
 
         // Remove self from context list
         this.dataSource.removeContext(this);
-
     }
 
     //////////////////////////////////////////////////////////////

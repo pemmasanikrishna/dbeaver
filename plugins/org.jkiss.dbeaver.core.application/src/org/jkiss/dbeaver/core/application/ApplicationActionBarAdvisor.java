@@ -1,22 +1,22 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.core.application;
 
+import org.eclipse.core.runtime.IExtension;
 import org.eclipse.jface.action.*;
 import org.eclipse.swt.SWT;
 import org.eclipse.ui.*;
@@ -25,6 +25,10 @@ import org.eclipse.ui.actions.ActionFactory.IWorkbenchAction;
 import org.eclipse.ui.actions.ContributionItemFactory;
 import org.eclipse.ui.application.ActionBarAdvisor;
 import org.eclipse.ui.application.IActionBarConfigurer;
+import org.eclipse.ui.internal.WorkbenchPlugin;
+import org.eclipse.ui.internal.registry.ActionSetRegistry;
+import org.eclipse.ui.internal.registry.IActionSetDescriptor;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.core.application.about.AboutBoxAction;
 import org.jkiss.dbeaver.ui.ActionUtils;
@@ -32,9 +36,13 @@ import org.jkiss.dbeaver.ui.IActionConstants;
 import org.jkiss.dbeaver.core.application.update.CheckForUpdateAction;
 import org.jkiss.dbeaver.ui.actions.common.EmergentExitAction;
 import org.jkiss.dbeaver.ui.actions.common.ToggleViewAction;
+import org.jkiss.dbeaver.ui.controls.StatusLineContributionItemEx;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorView;
 import org.jkiss.dbeaver.ui.navigator.project.ProjectExplorerView;
 import org.jkiss.dbeaver.ui.navigator.project.ProjectNavigatorView;
+
+import java.util.Locale;
+import java.util.TimeZone;
 
 /**
  * An action bar advisor is responsible for creating, adding, and disposing of the
@@ -43,6 +51,8 @@ import org.jkiss.dbeaver.ui.navigator.project.ProjectNavigatorView;
  */
 public class ApplicationActionBarAdvisor extends ActionBarAdvisor
 {
+    private static final Log log = Log.getLog(ApplicationActionBarAdvisor.class);
+
     public static final String M_ALT_HELP = "dbhelp";
 
     protected IActionDelegate emergentExitAction;
@@ -56,6 +66,34 @@ public class ApplicationActionBarAdvisor extends ActionBarAdvisor
         super(configurer);
     }
 
+    private static final String[] actionSetId = new String[] {
+        "org.eclipse.ui.WorkingSetActionSet", //$NON-NLS-1$
+        "org.eclipse.ui.edit.text.actionSet.navigation", //$NON-NLS-1$
+        //"org.eclipse.ui.edit.text.actionSet.convertLineDelimitersTo", //$NON-NLS-1$
+        //"org.eclipse.ui.actionSet.openFiles", //$NON-NLS-1$
+        "org.eclipse.ui.edit.text.actionSet.annotationNavigation", //$NON-NLS-1$
+        //"org.eclipse.ui.NavigateActionSet", //$NON-NLS-1$
+        //"org.eclipse.search.searchActionSet" //$NON-NLS-1$
+    };
+
+
+
+
+    private void removeUnWantedActions() {
+        ActionSetRegistry asr = WorkbenchPlugin.getDefault().getActionSetRegistry();
+        IActionSetDescriptor[] actionSets = asr.getActionSets();
+
+        for (IActionSetDescriptor actionSet : actionSets) {
+            for (String element : actionSetId) {
+
+                if (element.equals(actionSet.getId())) {
+                    log.debug("Disable Eclipse action set '" + actionSet.getId() + "'");
+                    IExtension ext = actionSet.getConfigurationElement().getDeclaringExtension();
+                    asr.removeExtension(ext, new Object[] { actionSet });
+                }
+            }
+        }
+    }
     protected boolean isShowAltHelp() {
         return true;
     }
@@ -63,6 +101,8 @@ public class ApplicationActionBarAdvisor extends ActionBarAdvisor
     @Override
     protected void makeActions(final IWorkbenchWindow window)
     {
+        removeUnWantedActions();
+
         register(ActionFactory.SAVE.create(window));
         register(ActionFactory.SAVE_AS.create(window));
         register(ActionFactory.SAVE_ALL.create(window));
@@ -204,4 +244,20 @@ public class ApplicationActionBarAdvisor extends ActionBarAdvisor
 
     }
 
+    @Override
+    protected void fillStatusLine(IStatusLineManager statusLine) {
+
+        {
+            StatusLineContributionItemEx tzItem = new StatusLineContributionItemEx("Time Zone");
+            tzItem.setText(TimeZone.getDefault().getDisplayName(false, TimeZone.SHORT));
+            tzItem.setToolTip(TimeZone.getDefault().getDisplayName(true, TimeZone.LONG));
+            statusLine.add(tzItem);
+        }
+        {
+            StatusLineContributionItemEx localeItem = new StatusLineContributionItemEx("Locale");
+            localeItem.setText(Locale.getDefault().toString());
+            localeItem.setToolTip(Locale.getDefault().getDisplayName());
+            statusLine.add(localeItem);
+        }
+    }
 }

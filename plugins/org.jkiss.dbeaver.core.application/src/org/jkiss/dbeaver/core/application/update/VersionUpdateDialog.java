@@ -1,23 +1,21 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.core.application.update;
 
-import org.eclipse.core.runtime.Platform;
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.swt.SWT;
@@ -31,11 +29,11 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 import org.jkiss.dbeaver.core.CoreMessages;
-import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.registry.updater.VersionDescriptor;
 import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.utils.GeneralUtils;
 
 class VersionUpdateDialog extends Dialog {
 
@@ -68,13 +66,15 @@ class VersionUpdateDialog extends Dialog {
         titleLabel.setLayoutData(gd);
         titleLabel.setFont(boldFont);
 
+        final String versionStr = GeneralUtils.getProductVersion().toString();
+
         UIUtils.createControlLabel(propGroup, CoreMessages.dialog_version_update_current_version);
         new Label(propGroup, SWT.NONE)
-            .setText(DBeaverCore.getVersion().toString());
+            .setText(versionStr);
 
         UIUtils.createControlLabel(propGroup, CoreMessages.dialog_version_update_new_version);
         new Label(propGroup, SWT.NONE)
-            .setText(newVersion == null ? DBeaverCore.getVersion().toString() : newVersion.getProgramVersion().toString() + "    (" + newVersion.getUpdateTime() + ")"); //$NON-NLS-2$ //$NON-NLS-3$
+            .setText(newVersion == null ? versionStr : newVersion.getProgramVersion().toString() + "    (" + newVersion.getUpdateTime() + ")"); //$NON-NLS-2$ //$NON-NLS-3$
 
         if (newVersion != null) {
             final Label notesLabel = UIUtils.createControlLabel(propGroup, CoreMessages.dialog_version_update_notes);
@@ -110,6 +110,8 @@ class VersionUpdateDialog extends Dialog {
     protected void createButtonsForButtonBar(Composite parent)
     {
         if (newVersion != null) {
+/*
+            // Disable P2 update. Doesn't work and can't work properly in most cases.
             boolean hasUpdate = Platform.getBundle(CheckForUpdateAction.P2_PLUGIN_ID) != null;
             if (hasUpdate) {
                 createButton(
@@ -118,11 +120,12 @@ class VersionUpdateDialog extends Dialog {
                     "Update",
                     true);
             }
+*/
             createButton(
                 parent,
                 INFO_ID,
                 CoreMessages.dialog_version_update_button_more_info,
-                !hasUpdate);
+                true);
         }
 
         createButton(
@@ -143,7 +146,7 @@ class VersionUpdateDialog extends Dialog {
             final IWorkbenchWindow window = DBeaverUI.getActiveWorkbenchWindow();
             CheckForUpdateAction.activateStandardHandler(window);
             try {
-                ActionUtils.runCommand(CheckForUpdateAction.P2_UPDATE_COMMAND, PlatformUI.getWorkbench());
+                ActionUtils.runCommand(CheckForUpdateAction.P2_UPDATE_COMMAND, PlatformUI.getWorkbench().getActiveWorkbenchWindow());
             } finally {
                 CheckForUpdateAction.deactivateStandardHandler(window);
             }

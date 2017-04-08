@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.tools.scripts;
 
@@ -26,6 +25,8 @@ import org.eclipse.swt.events.ModifyEvent;
 import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
@@ -36,15 +37,16 @@ import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
 import org.jkiss.dbeaver.model.navigator.DBNResource;
 import org.jkiss.dbeaver.registry.DataSourceDescriptor;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
-import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.controls.CImageCombo;
+import org.jkiss.dbeaver.ui.controls.CSmartCombo;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorTree;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.File;
@@ -54,7 +56,7 @@ class ScriptsImportWizardPage extends WizardPage {
 
     private Text directoryText;
     private Text extensionsText;
-    private CImageCombo scriptsDataSources;
+    private CSmartCombo<DataSourceDescriptor> scriptsDataSources;
     private Button overwriteCheck;
     private DBNNode importRoot = null;
 
@@ -128,9 +130,9 @@ class ScriptsImportWizardPage extends WizardPage {
             extensionsText.setLayoutData(gd);
 
             UIUtils.createControlLabel(generalSettings, CoreMessages.dialog_scripts_import_wizard_label_default_connection);
-            scriptsDataSources = new CImageCombo(generalSettings, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY);
+            scriptsDataSources = new CSmartCombo<>(generalSettings, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY, new ConnectionLabelProvider());
             for (DataSourceDescriptor dataSourceDescriptor : DataSourceRegistry.getAllDataSources()) {
-                scriptsDataSources.add(DBeaverIcons.getImage(dataSourceDescriptor.getObjectImage()), dataSourceDescriptor.getName(), null, dataSourceDescriptor);
+                scriptsDataSources.addItem(dataSourceDescriptor);
             }
 
             if (scriptsDataSources.getItemCount() > 0) {
@@ -189,7 +191,7 @@ class ScriptsImportWizardPage extends WizardPage {
         DBPDataSourceContainer dataSourceContainer = null;
         final int dsIndex = scriptsDataSources.getSelectionIndex();
         if (dsIndex >= 0) {
-            dataSourceContainer = (DBPDataSourceContainer) scriptsDataSources.getData(dsIndex);
+            dataSourceContainer = (DBPDataSourceContainer) scriptsDataSources.getItem(dsIndex);
         }
         final String outputDir = directoryText.getText();
         DBeaverCore.getGlobalPreferenceStore().setValue(ScriptsExportWizardPage.PREF_SCRIPTS_EXPORT_OUT_DIR, outputDir);
@@ -200,4 +202,28 @@ class ScriptsImportWizardPage extends WizardPage {
             (DBNResource) importRoot,
             dataSourceContainer);
     }
+
+    private static class ConnectionLabelProvider extends LabelProvider implements IColorProvider {
+        @Override
+        public Image getImage(Object element) {
+            final DBNDatabaseNode node = DBeaverCore.getInstance().getNavigatorModel().findNode((DataSourceDescriptor) element);
+            return node == null ? null : DBeaverIcons.getImage(node.getNodeIcon());
+        }
+
+        @Override
+        public String getText(Object element) {
+            return ((DataSourceDescriptor) element).getName();
+        }
+
+        @Override
+        public Color getForeground(Object element) {
+            return null;
+        }
+
+        @Override
+        public Color getBackground(Object element) {
+            return element == null ? null : UIUtils.getConnectionColor(((DataSourceDescriptor) element).getConnectionConfiguration());
+        }
+    }
+
 }

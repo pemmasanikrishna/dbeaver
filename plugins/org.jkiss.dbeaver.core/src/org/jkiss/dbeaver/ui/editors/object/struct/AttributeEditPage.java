@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.object.struct;
 
@@ -33,6 +32,8 @@ import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSDataType;
 import org.jkiss.dbeaver.model.struct.DBSEntityAttribute;
 import org.jkiss.dbeaver.runtime.properties.ObjectPropertyDescriptor;
 import org.jkiss.dbeaver.runtime.properties.PropertySourceAbstract;
@@ -71,7 +72,7 @@ public class AttributeEditPage extends BaseObjectEditPage {
         });
 
         UIUtils.createControlLabel(propsGroup, "Properties").setLayoutData(new GridData(GridData.VERTICAL_ALIGN_BEGINNING));
-        PropertyTreeViewer propertyViewer = new PropertyTreeViewer(propsGroup, SWT.BORDER);
+        final PropertyTreeViewer propertyViewer = new PropertyTreeViewer(propsGroup, SWT.BORDER);
         gd = new GridData(GridData.FILL_BOTH);
         gd.widthHint = 400;
         propertyViewer.getControl().setLayoutData(gd);
@@ -82,7 +83,30 @@ public class AttributeEditPage extends BaseObjectEditPage {
             }
         });
 
-        PropertySourceAbstract pc = new PropertySourceEditable(commandContext, attribute, attribute);
+        PropertySourceAbstract pc = new PropertySourceEditable(commandContext, attribute, attribute) {
+            @Override
+            public void setPropertyValue(@Nullable DBRProgressMonitor monitor, Object editableValue, ObjectPropertyDescriptor prop, Object newValue) throws IllegalArgumentException {
+                super.setPropertyValue(monitor, editableValue, prop, newValue);
+
+/*
+                if (prop.getId().equals("dataType")) {
+                    newValue = getPropertyValue(monitor, editableValue, prop);
+                    if (newValue instanceof DBSDataType) {
+                        DBPPropertyDescriptor lengthProp = getProperty("maxLength");
+                        if (lengthProp instanceof ObjectPropertyDescriptor) {
+                            DBPDataKind dataKind = ((DBSDataType) newValue).getDataKind();
+                            if (dataKind == DBPDataKind.STRING) {
+                                setPropertyValue(monitor, editableValue, (ObjectPropertyDescriptor) lengthProp, 100);
+                            } else {
+                                setPropertyValue(monitor, editableValue, (ObjectPropertyDescriptor) lengthProp, null);
+                            }
+                            propertyViewer.update(lengthProp, null);
+                        }
+                    }
+                }
+*/
+            }
+        };
         pc.collectProperties();
         for (DBPPropertyDescriptor prop : pc.getProperties()) {
             if (prop instanceof ObjectPropertyDescriptor) {

@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.controls.resultset;
@@ -29,6 +28,7 @@ import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.data.*;
 import org.jkiss.dbeaver.model.exec.*;
@@ -38,8 +38,6 @@ import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.*;
-import org.jkiss.dbeaver.model.struct.rdb.DBSCatalog;
-import org.jkiss.dbeaver.model.struct.rdb.DBSSchema;
 import org.jkiss.dbeaver.model.struct.rdb.DBSTable;
 import org.jkiss.dbeaver.model.struct.rdb.DBSTableIndex;
 import org.jkiss.dbeaver.model.virtual.DBVEntity;
@@ -141,7 +139,11 @@ public class ResultSetUtils
                 if (attrEntity == null) {
                     attrEntity = entity;
                 }
-                if (attrEntity != null) {
+                if (attrEntity == null) {
+                    if (attrEntityMeta != null) {
+                        log.debug("Table '" + DBUtils.getSimpleQualifiedName(attrEntityMeta.getCatalogName(), attrEntityMeta.getSchemaName(), attrEntityMeta.getEntityName()) + "' not found in metadata catalog");
+                    }
+                } else {
                     DBDPseudoAttribute pseudoAttribute = DBUtils.getPseudoAttribute(attrEntity, attrMeta.getName());
                     if (pseudoAttribute != null) {
                         binding.setPseudoAttribute(pseudoAttribute);
@@ -239,9 +241,6 @@ public class ResultSetUtils
             if (entity == null) {
                 entity = getEntityFromMetaData(monitor, objectContainer, entityMeta, true);
             }
-            if (entity == null) {
-                log.debug("Table '" + DBUtils.getSimpleQualifiedName(entityMeta.getCatalogName(), entityMeta.getSchemaName(), entityMeta.getEntityName()) + "' not found in metadata catalog");
-            }
             return entity;
         } else {
             return null;
@@ -257,38 +256,7 @@ public class ResultSetUtils
             schemaName = DBObjectNameCaseTransformer.transformName(dataSource, schemaName);
             entityName = DBObjectNameCaseTransformer.transformName(dataSource, entityName);
         }
-        Class<? extends DBSObject> scChildType = objectContainer.getChildType(monitor);
-        DBSObject entityObject;
-        if (!CommonUtils.isEmpty(catalogName) && scChildType != null &&
-            (DBSSchema.class.isAssignableFrom(scChildType) || DBSTable.class.isAssignableFrom(scChildType))) {
-            // Do not use catalog name
-            // Some data sources do not load catalog list but result set meta data contains one (e.g. DB2 and SQLite)
-            entityObject = DBUtils.getObjectByPath(monitor, objectContainer, null, schemaName, entityName);
-        } else {
-            if (CommonUtils.isEmpty(catalogName) && !CommonUtils.isEmpty(schemaName) && scChildType != null && DBSCatalog.class.isAssignableFrom(scChildType)) {
-                // No catalog name specified but metadata supports catalogs (e.g. PostgreSQL)
-                // Catalog specified instead of schema. This may happen if metadata provided by SQL query parser
-                // which doesn't know a difference between catalogs and schemas
-                entityObject = DBUtils.getObjectByPath(monitor, objectContainer, schemaName, null, entityName);
-                if (entityObject == null) {
-                    entityObject = DBUtils.getObjectByPath(monitor, objectContainer, null, schemaName, entityName);
-                }
-                if (entityObject == null) {
-                    // Try using active object
-                    DBSObject selectedObject = DBUtils.getSelectedObject(objectContainer, false);
-                    if (selectedObject != null && selectedObject instanceof DBSCatalog) {
-                        objectContainer = (DBSCatalog)selectedObject;
-                        entityObject = DBUtils.getObjectByPath(monitor, objectContainer, schemaName, null, entityName);
-                        if (entityObject == null) {
-                            entityObject = DBUtils.getObjectByPath(monitor, objectContainer, null, schemaName, entityName);
-                        }
-                    }
-
-                }
-            } else {
-                entityObject = DBUtils.getObjectByPath(monitor, objectContainer, catalogName, schemaName, entityName);
-            }
-        }
+        DBSObject entityObject = DBUtils.getObjectByPath(monitor, objectContainer, catalogName, schemaName, entityName);
         if (entityObject == null) {
             return null;
         } else if (entityObject instanceof DBSEntity) {

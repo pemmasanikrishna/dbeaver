@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.preferences;
 
@@ -35,16 +34,11 @@ import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.registry.encode.EncryptionException;
 import org.jkiss.dbeaver.registry.encode.SecuredPasswordEncrypter;
-import org.jkiss.dbeaver.registry.maven.MavenRegistry;
-import org.jkiss.dbeaver.registry.maven.MavenRepository;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.dialogs.DialogUtils;
 import org.jkiss.dbeaver.ui.dialogs.EnterNameDialog;
 import org.jkiss.dbeaver.utils.PrefUtils;
 import org.jkiss.utils.CommonUtils;
-
-import java.net.MalformedURLException;
-import java.net.URL;
 
 /**
  * PrefPageDrivers
@@ -57,7 +51,6 @@ public class PrefPageDrivers extends AbstractPrefPage implements IWorkbenchPrefe
 
     private Button versionUpdateCheck;
 
-    private Table mavenRepoTable;
     private List sourceList;
 
     private Text proxyHostText;
@@ -88,55 +81,18 @@ public class PrefPageDrivers extends AbstractPrefPage implements IWorkbenchPrefe
             Group settings = UIUtils.createControlGroup(composite, "Settings", 2, GridData.FILL_HORIZONTAL, 300);
             versionUpdateCheck = UIUtils.createCheckbox(settings, "Check for new driver versions", false);
         }
+
         {
-            Group mavenGroup = UIUtils.createControlGroup(composite, "Maven repositories", 2, GridData.FILL_HORIZONTAL, 300);
-            mavenRepoTable = new Table(mavenGroup, SWT.BORDER | SWT.FULL_SELECTION);
-            UIUtils.createTableColumn(mavenRepoTable, SWT.LEFT, "Id");
-            UIUtils.createTableColumn(mavenRepoTable, SWT.LEFT, "URL");
-            mavenRepoTable.setHeaderVisible(true);
-            GridData gd = new GridData(GridData.FILL_BOTH);
-            gd.heightHint = 60;
-            mavenRepoTable.setLayoutData(gd);
+            Group proxyObjects = UIUtils.createControlGroup(composite, CoreMessages.pref_page_ui_general_group_http_proxy, 4, GridData.FILL_HORIZONTAL | GridData.VERTICAL_ALIGN_BEGINNING, 300);
+            proxyHostText = UIUtils.createLabelText(proxyObjects, CoreMessages.pref_page_ui_general_label_proxy_host, null); //$NON-NLS-2$
+            proxyPortSpinner = UIUtils.createLabelSpinner(proxyObjects, CoreMessages.pref_page_ui_general_spinner_proxy_port, 0, 0, 65535);
+            proxyUserText = UIUtils.createLabelText(proxyObjects, CoreMessages.pref_page_ui_general_label_proxy_user, null); //$NON-NLS-2$
+            proxyPasswordText = UIUtils.createLabelText(proxyObjects, CoreMessages.pref_page_ui_general_label_proxy_password, null, SWT.PASSWORD | SWT.BORDER); //$NON-NLS-2$
+        }
 
-            Composite buttonsPH = UIUtils.createPlaceholder(mavenGroup, 1);
-            UIUtils.createToolButton(buttonsPH, "Add", new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e)
-                {
-                    String urlString = EnterNameDialog.chooseName(getShell(), "Enter Maven repository URL", "http://");
-                    if (urlString != null) {
-                        try {
-                            URL url = new URL(urlString);
-                            new TableItem(mavenRepoTable, SWT.NONE).setText(new String[]{url.getHost(), urlString});
-                        } catch (MalformedURLException e1) {
-                            UIUtils.showErrorDialog(getShell(), "Bad URL", "Bad Maven repository URL", e1);
-                        }
-                    }
-                }
-            });
-            final Button removeButton = UIUtils.createToolButton(buttonsPH, "Remove", new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e)
-                {
-                    mavenRepoTable.remove(mavenRepoTable.getSelectionIndices());
-                    mavenRepoTable.notifyListeners(SWT.Selection, new Event());
-                }
-            });
-            removeButton.setEnabled(false);
-
-            mavenRepoTable.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e)
-                {
-                    boolean enabled = false;
-                    TableItem[] selection = mavenRepoTable.getSelection();
-                    if (selection.length == 1) {
-                        enabled = selection[0].getData() instanceof MavenRepository &&
-                            ((MavenRepository) selection[0].getData()).getType() == MavenRepository.RepositoryType.CUSTOM;
-                    }
-                    removeButton.setEnabled(enabled);
-                }
-            });
+        {
+            Group drivers = UIUtils.createControlGroup(composite, CoreMessages.pref_page_drivers_group_location, 2, GridData.FILL_HORIZONTAL, 300);
+            customDriversHome = DialogUtils.createOutputFolderChooser(drivers, "Local folder", null);
         }
 
         {
@@ -177,21 +133,6 @@ public class PrefPageDrivers extends AbstractPrefPage implements IWorkbenchPrefe
             });
         }
 
-        {
-            Group proxyObjects = UIUtils.createControlGroup(composite, CoreMessages.pref_page_ui_general_group_http_proxy, 4, GridData.FILL_HORIZONTAL | GridData.VERTICAL_ALIGN_BEGINNING, 300);
-            proxyHostText = UIUtils.createLabelText(proxyObjects, CoreMessages.pref_page_ui_general_label_proxy_host, null); //$NON-NLS-2$
-            proxyPortSpinner = UIUtils.createLabelSpinner(proxyObjects, CoreMessages.pref_page_ui_general_spinner_proxy_port, 0, 0, 65535);
-            proxyUserText = UIUtils.createLabelText(proxyObjects, CoreMessages.pref_page_ui_general_label_proxy_user, null); //$NON-NLS-2$
-            proxyPasswordText = UIUtils.createLabelText(proxyObjects, CoreMessages.pref_page_ui_general_label_proxy_password, null, SWT.PASSWORD | SWT.BORDER); //$NON-NLS-2$
-        }
-
-        {
-            Group drivers = UIUtils.createControlGroup(composite, CoreMessages.pref_page_drivers_group_location, 2, GridData.FILL_HORIZONTAL, 300);
-            customDriversHome = DialogUtils.createOutputFolderChooser(drivers, "Local folder", null);
-        }
-
-
-
         performDefaults();
 
         return composite;
@@ -222,13 +163,6 @@ public class PrefPageDrivers extends AbstractPrefPage implements IWorkbenchPrefe
         for (String source : DriverDescriptor.getDriversSources()) {
             sourceList.add(source);
         }
-
-        for (MavenRepository repo : MavenRegistry.getInstance().getRepositories()) {
-            TableItem item = new TableItem(mavenRepoTable, SWT.NONE);
-            item.setText(new String[]{repo.getId(), repo.getUrl()});
-            item.setData(repo);
-        }
-        UIUtils.packColumns(mavenRepoTable, true);
         super.performDefaults();
     }
 
@@ -260,22 +194,6 @@ public class PrefPageDrivers extends AbstractPrefPage implements IWorkbenchPrefe
                 sources.append(item);
             }
             store.setValue(DBeaverPreferences.UI_DRIVERS_SOURCES, sources.toString());
-        }
-
-        {
-            StringBuilder mavenRepos = new StringBuilder();
-            for (TableItem item : mavenRepoTable.getItems()) {
-                String repoId = item.getText(0);
-                String repoURL = item.getText(1);
-                MavenRepository repository = MavenRegistry.getInstance().findRepository(repoId);
-                if (repository != null && repository.getType() != MavenRepository.RepositoryType.CUSTOM) {
-                    continue;
-                }
-                if (mavenRepos.length() > 0) mavenRepos.append('|');
-                mavenRepos.append(repoId).append(':').append(repoURL);
-            }
-            store.setValue(DBeaverPreferences.UI_MAVEN_REPOSITORIES, mavenRepos.toString());
-            MavenRegistry.getInstance().loadCustomRepositories();
         }
 
         PrefUtils.savePreferenceStore(store);

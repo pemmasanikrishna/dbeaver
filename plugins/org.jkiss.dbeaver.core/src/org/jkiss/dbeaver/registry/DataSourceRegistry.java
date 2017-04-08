@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.registry;
 
@@ -76,6 +75,8 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
     @Deprecated
     public static final String DEFAULT_ACTIVE_OBJECT = "default.activeObject"; //$NON-NLS-1$
 
+    private static final long DISCONNECT_ALL_TIMEOUT = 5000;
+
     private static final Log log = Log.getLog(DataSourceRegistry.class);
 
     public static final String OLD_CONFIG_FILE_NAME = "data-sources.xml"; //$NON-NLS-1$
@@ -108,8 +109,8 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
             }
             this.dataSourceListeners.clear();
         }
-        // Disconnect in 2 seconds or die
-        closeConnections(DBConstants.DISCONNECT_TIMEOUT);
+        // Disconnect in 5 seconds or die
+        closeConnections(DISCONNECT_ALL_TIMEOUT);
         // Do not save config on shutdown.
         // Some data source might be broken due to misconfiguration
         // and we don't want to loose their config just after restart
@@ -125,7 +126,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         }
     }
 
-    public void closeConnections(long waitTime)
+    private void closeConnections(long waitTime)
     {
         boolean hasConnections = false;
         synchronized (dataSources) {
@@ -273,7 +274,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         dataSourceFolders.remove(folderImpl);
     }
 
-    DataSourceFolder findRootFolder(String name) {
+    private DataSourceFolder findRootFolder(String name) {
         for (DataSourceFolder root : getRootFolders()) {
             if (root.getName().equals(name)) {
                 return root;
@@ -282,7 +283,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         return null;
     }
 
-    DataSourceFolder findFolderByPath(String path, boolean create) {
+    private DataSourceFolder findFolderByPath(String path, boolean create) {
         DataSourceFolder parent = null;
         for (String name : path.split("/")) {
             DataSourceFolder folder = parent == null ? findRootFolder(name) : parent.getChild(name);
@@ -306,7 +307,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
             this.dataSources.add(descriptor);
         }
         this.saveDataSources();
-        this.fireDataSourceEvent(DBPEvent.Action.OBJECT_ADD, descriptor);
+        notifyDataSourceListeners(new DBPEvent(DBPEvent.Action.OBJECT_ADD, descriptor, true));
     }
 
     public void removeDataSource(DBPDataSourceContainer dataSource)
@@ -358,7 +359,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         }
     }
 
-    public void fireDataSourceEvent(
+    private void fireDataSourceEvent(
         DBPEvent.Action action,
         DBSObject object)
     {
@@ -513,7 +514,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         updateProjectNature();
     }
 
-    void saveDataSources()
+    private void saveDataSources()
     {
         updateProjectNature();
         final IProgressMonitor progressMonitor = new NullProgressMonitor();
@@ -635,13 +636,6 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         xml.addAttribute(RegistryConstants.ATTR_PROVIDER, dataSource.getDriver().getProviderDescriptor().getId());
         xml.addAttribute(RegistryConstants.ATTR_DRIVER, dataSource.getDriver().getId());
         xml.addAttribute(RegistryConstants.ATTR_NAME, dataSource.getName());
-        xml.addAttribute(RegistryConstants.ATTR_CREATE_DATE, dataSource.getCreateDate().getTime());
-        if (dataSource.getUpdateDate() != null) {
-            xml.addAttribute(RegistryConstants.ATTR_UPDATE_DATE, dataSource.getUpdateDate().getTime());
-        }
-        if (dataSource.getLoginDate() != null) {
-            xml.addAttribute(RegistryConstants.ATTR_LOGIN_DATE, dataSource.getLoginDate().getTime());
-        }
         xml.addAttribute(RegistryConstants.ATTR_SAVE_PASSWORD, dataSource.isSavePassword());
         if (dataSource.isShowSystemObjects()) {
             xml.addAttribute(RegistryConstants.ATTR_SHOW_SYSTEM_OBJECTS, dataSource.isShowSystemObjects());
@@ -671,11 +665,13 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
             xml.addAttribute(RegistryConstants.ATTR_SERVER, CommonUtils.notEmpty(connectionInfo.getServerName()));
             xml.addAttribute(RegistryConstants.ATTR_DATABASE, CommonUtils.notEmpty(connectionInfo.getDatabaseName()));
             xml.addAttribute(RegistryConstants.ATTR_URL, CommonUtils.notEmpty(connectionInfo.getUrl()));
-            xml.addAttribute(RegistryConstants.ATTR_USER, CommonUtils.notEmpty(connectionInfo.getUserName()));
 
-            if (dataSource.isSavePassword() && !CommonUtils.isEmpty(connectionInfo.getUserPassword())) {
-                saveSecuredPassword(xml, dataSource, null, connectionInfo.getUserPassword());
-            }
+            saveSecuredCredentials(xml,
+                dataSource,
+                null,
+                connectionInfo.getUserName(),
+                dataSource.isSavePassword() ? connectionInfo.getUserPassword() : null);
+
             if (!CommonUtils.isEmpty(connectionInfo.getClientHomeId())) {
                 xml.addAttribute(RegistryConstants.ATTR_HOME, connectionInfo.getClientHomeId());
             }
@@ -690,13 +686,13 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                 xml.addAttribute(RegistryConstants.ATTR_KEEP_ALIVE, connectionInfo.getKeepAliveInterval());
             }
 
-            for (Map.Entry<Object, Object> entry : connectionInfo.getProperties().entrySet()) {
+            for (Map.Entry<String, String> entry : connectionInfo.getProperties().entrySet()) {
                 xml.startElement(RegistryConstants.TAG_PROPERTY);
                 xml.addAttribute(RegistryConstants.ATTR_NAME, CommonUtils.toString(entry.getKey()));
                 xml.addAttribute(RegistryConstants.ATTR_VALUE, CommonUtils.toString(entry.getValue()));
                 xml.endElement();
             }
-            for (Map.Entry<Object, Object> entry : connectionInfo.getProviderProperties().entrySet()) {
+            for (Map.Entry<String, String> entry : connectionInfo.getProviderProperties().entrySet()) {
                 xml.startElement(RegistryConstants.TAG_PROVIDER_PROPERTY);
                 xml.addAttribute(RegistryConstants.ATTR_NAME, CommonUtils.toString(entry.getKey()));
                 xml.addAttribute(RegistryConstants.ATTR_VALUE, CommonUtils.toString(entry.getValue()));
@@ -711,6 +707,9 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                 xml.addAttribute(RegistryConstants.ATTR_ENABLED, command.isEnabled());
                 xml.addAttribute(RegistryConstants.ATTR_SHOW_PANEL, command.isShowProcessPanel());
                 xml.addAttribute(RegistryConstants.ATTR_WAIT_PROCESS, command.isWaitProcessFinish());
+                if (command.isWaitProcessFinish()) {
+                    xml.addAttribute(RegistryConstants.ATTR_WAIT_PROCESS_TIMEOUT, command.getWaitProcessTimeoutMs());
+                }
                 xml.addAttribute(RegistryConstants.ATTR_TERMINATE_AT_DISCONNECT, command.isTerminateAtDisconnect());
                 xml.addText(command.getCommand());
                 xml.endElement();
@@ -721,10 +720,14 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                 xml.addAttribute(RegistryConstants.ATTR_TYPE, configuration.getType().name());
                 xml.addAttribute(RegistryConstants.ATTR_ID, CommonUtils.notEmpty(configuration.getId()));
                 xml.addAttribute(RegistryConstants.ATTR_ENABLED, configuration.isEnabled());
-                xml.addAttribute(RegistryConstants.ATTR_USER, CommonUtils.notEmpty(configuration.getUserName()));
                 xml.addAttribute(RegistryConstants.ATTR_SAVE_PASSWORD, configuration.isSavePassword());
-                if (configuration.isSavePassword() && !CommonUtils.isEmpty(configuration.getPassword())) {
-                    saveSecuredPassword(xml, dataSource, "network/" + configuration.getId(), configuration.getPassword());
+                if (!CommonUtils.isEmpty(configuration.getUserName())) {
+                    saveSecuredCredentials(
+                        xml,
+                        dataSource,
+                        "network/" + configuration.getId(),
+                        configuration.getUserName(),
+                        configuration.isSavePassword() ? configuration.getPassword() : null);
                 }
                 for (Map.Entry<String, String> entry : configuration.getProperties().entrySet()) {
                     if (CommonUtils.isEmpty(entry.getValue())) {
@@ -818,7 +821,7 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
         xml.endElement();
     }
 
-    private void saveSecuredPassword(XMLBuilder xml, DataSourceDescriptor dataSource, String subNode, String password) throws IOException {
+    private void saveSecuredCredentials(XMLBuilder xml, DataSourceDescriptor dataSource, String subNode, String userName, String password) throws IOException {
         boolean saved = false;
         final DBASecureStorage secureStorage = getPlatform().getSecureStorage();
         {
@@ -833,6 +836,13 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                         }
                     }
                     prefNode.put("name", dataSource.getName(), false);
+
+                    if (!CommonUtils.isEmpty(userName)) {
+                        prefNode.put(RegistryConstants.ATTR_USER, userName, true);
+                        saved = true;
+                    } else {
+                        prefNode.remove(RegistryConstants.ATTR_USER);
+                    }
                     if (!CommonUtils.isEmpty(password)) {
                         prefNode.put(RegistryConstants.ATTR_PASSWORD, password, true);
                         saved = true;
@@ -844,9 +854,14 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                 log.error("Can't save password in secure storage", e);
             }
         }
-        if (!saved && !CommonUtils.isEmpty(password)) {
+        if (!saved) {
             try {
-                xml.addAttribute(RegistryConstants.ATTR_PASSWORD, ENCRYPTOR.encrypt(password));
+                if (!CommonUtils.isEmpty(userName)) {
+                    xml.addAttribute(RegistryConstants.ATTR_USER, CommonUtils.notEmpty(userName));
+                }
+                if (!CommonUtils.isEmpty(password)) {
+                    xml.addAttribute(RegistryConstants.ATTR_PASSWORD, ENCRYPTOR.encrypt(password));
+                }
             } catch (EncryptionException e) {
                 log.error("Error encrypting password", e);
             }
@@ -986,27 +1001,11 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                             new DBPConnectionConfiguration());
                     } else {
                         // Clean settings - they have to be loaded later by parser
-                        curDataSource.getConnectionConfiguration().setProperties(Collections.emptyMap());
+                        curDataSource.getConnectionConfiguration().setProperties(Collections.<String, String>emptyMap());
                         curDataSource.getConnectionConfiguration().setHandlers(Collections.<DBWHandlerConfiguration>emptyList());
                         curDataSource.clearFilters();
                     }
                     curDataSource.setName(name);
-                    try {
-                        String createDate = atts.getValue(RegistryConstants.ATTR_CREATE_DATE);
-                        if (!CommonUtils.isEmpty(createDate)) {
-                            curDataSource.setCreateDate(new Date(Long.parseLong(createDate)));
-                        }
-                        String updateDate = atts.getValue(RegistryConstants.ATTR_UPDATE_DATE);
-                        if (!CommonUtils.isEmpty(updateDate)) {
-                            curDataSource.setUpdateDate(new Date(Long.parseLong(updateDate)));
-                        }
-                        String loginDate = atts.getValue(RegistryConstants.ATTR_LOGIN_DATE);
-                        if (!CommonUtils.isEmpty(loginDate)) {
-                            curDataSource.setLoginDate(new Date(Long.parseLong(loginDate)));
-                        }
-                    } catch (NumberFormatException e) {
-                        log.warn("Bad date value", e);
-                    }
                     curDataSource.setSavePassword(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_SAVE_PASSWORD)));
                     curDataSource.setShowSystemObjects(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_SHOW_SYSTEM_OBJECTS)));
                     curDataSource.setShowUtilityObjects(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_SHOW_UTIL_OBJECTS)));
@@ -1049,9 +1048,12 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                         config.setServerName(atts.getValue(RegistryConstants.ATTR_SERVER));
                         config.setDatabaseName(atts.getValue(RegistryConstants.ATTR_DATABASE));
                         config.setUrl(atts.getValue(RegistryConstants.ATTR_URL));
-                        config.setUserName(atts.getValue(RegistryConstants.ATTR_USER));
                         if (!passwordReadCanceled) {
-                            config.setUserPassword(readSecuredPassword(atts, curDataSource, null));
+                            final String[] creds = readSecuredCredentials(atts, curDataSource, null);
+                            config.setUserName(creds[0]);
+                            if (curDataSource.isSavePassword()) {
+                                config.setUserPassword(creds[1]);
+                            }
                         }
                         config.setClientHomeId(atts.getValue(RegistryConstants.ATTR_HOME));
                         config.setConnectionType(
@@ -1125,6 +1127,11 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                         curCommand.setEnabled(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_ENABLED)));
                         curCommand.setShowProcessPanel(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_SHOW_PANEL)));
                         curCommand.setWaitProcessFinish(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_WAIT_PROCESS)));
+                        if (curCommand.isWaitProcessFinish()) {
+                            String timeoutString = atts.getValue(RegistryConstants.ATTR_WAIT_PROCESS_TIMEOUT);
+                            int timeoutMs = CommonUtils.toInt(timeoutString, DBRShellCommand.WAIT_PROCESS_TIMEOUT_FOREVER);
+                            curCommand.setWaitProcessTimeoutMs(timeoutMs);
+                        }
                         curCommand.setTerminateAtDisconnect(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_TERMINATE_AT_DISCONNECT)));
                         curDataSource.getConnectionConfiguration().setEvent(eventType, curCommand);
                     }
@@ -1158,13 +1165,15 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                         }
                         curNetworkHandler = new DBWHandlerConfiguration(handlerDescriptor, curDataSource.getDriver());
                         curNetworkHandler.setEnabled(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_ENABLED)));
-                        curNetworkHandler.setUserName(CommonUtils.notEmpty(atts.getValue(RegistryConstants.ATTR_USER)));
                         curNetworkHandler.setSavePassword(CommonUtils.getBoolean(atts.getValue(RegistryConstants.ATTR_SAVE_PASSWORD)));
-                        if (!passwordReadCanceled && curNetworkHandler.isSavePassword()) {
-                            curNetworkHandler.setPassword(readSecuredPassword(atts, curDataSource, "network/" + handlerId));
+                        if (!passwordReadCanceled) {
+                            final String[] creds = readSecuredCredentials(atts, curDataSource, "network/" + handlerId);
+                            curNetworkHandler.setUserName(creds[0]);
+                            if (curNetworkHandler.isSavePassword()) {
+                                curNetworkHandler.setPassword(creds[1]);
+                            }
                         }
 
-                        curNetworkHandler.setPassword(decryptPassword(atts.getValue(RegistryConstants.ATTR_PASSWORD)));
                         curDataSource.getConnectionConfiguration().addHandler(curNetworkHandler);
                     }
                     break;
@@ -1241,7 +1250,8 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
             isDescription = false;
         }
 
-        private String readSecuredPassword(Attributes xmlAttrs, DataSourceDescriptor dataSource, String subNode) {
+        private String[] readSecuredCredentials(Attributes xmlAttrs, DataSourceDescriptor dataSource, String subNode) {
+            String[] creds = new String[2];
             final DBASecureStorage secureStorage = getPlatform().getSecureStorage();
             {
                 try {
@@ -1252,10 +1262,8 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                                 prefNode = prefNode.node(nodeName);
                             }
                         }
-                        final String password = prefNode.get(RegistryConstants.ATTR_PASSWORD, null);
-                        if (password != null) {
-                            return password;
-                        }
+                        creds[0] = prefNode.get(RegistryConstants.ATTR_USER, null);
+                        creds[1] = prefNode.get(RegistryConstants.ATTR_PASSWORD, null);
                     }
                 } catch (StorageException e) {
                     // Most likely user canceled master password enter of failed by some other reason.
@@ -1264,9 +1272,14 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                     passwordReadCanceled = true;
                 }
             }
-
-            final String encPassword = xmlAttrs.getValue(RegistryConstants.ATTR_PASSWORD);
-            return CommonUtils.isEmpty(encPassword) ? null : decryptPassword(encPassword);
+            if (CommonUtils.isEmpty(creds[0])) {
+                creds[0] = xmlAttrs.getValue(RegistryConstants.ATTR_USER);
+            }
+            if (CommonUtils.isEmpty(creds[1])) {
+                final String encPassword = xmlAttrs.getValue(RegistryConstants.ATTR_PASSWORD);
+                creds[1] = CommonUtils.isEmpty(encPassword) ? null : decryptPassword(encPassword);
+            }
+            return creds;
         }
 
     }

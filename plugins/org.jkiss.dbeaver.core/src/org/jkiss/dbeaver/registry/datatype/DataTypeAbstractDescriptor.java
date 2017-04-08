@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.registry.datatype;
 
@@ -21,17 +20,15 @@ import org.eclipse.core.runtime.IConfigurationElement;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataKind;
+import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.app.DBPRegistryDescriptor;
 import org.jkiss.dbeaver.model.impl.AbstractDescriptor;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
 import org.jkiss.dbeaver.registry.DataSourceProviderDescriptor;
-import org.jkiss.dbeaver.registry.DataSourceProviderRegistry;
 import org.jkiss.dbeaver.registry.RegistryConstants;
 
 import java.lang.reflect.Field;
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 /**
  * DataTypeAbstractDescriptor
@@ -46,7 +43,7 @@ public abstract class DataTypeAbstractDescriptor<DESCRIPTOR> extends AbstractDes
     private final String id;
     private ObjectType implType;
     private Set<Object> supportedTypes = new HashSet<>();
-    private Set<DataSourceProviderDescriptor> supportedDataSources = new HashSet<>();
+    private List<String> supportedDataSources = new ArrayList<>();
 
     private boolean hasAll, hasTypeIds, hasDataKinds, hasTypeNames;
 
@@ -111,16 +108,12 @@ public abstract class DataTypeAbstractDescriptor<DESCRIPTOR> extends AbstractDes
         IConfigurationElement[] dsElements = config.getChildren(RegistryConstants.TAG_DATASOURCE);
         for (IConfigurationElement dsElement : dsElements) {
             String dsId = dsElement.getAttribute(RegistryConstants.ATTR_ID);
-            if (dsId == null) {
-                log.warn("Datasource reference with null ID"); //$NON-NLS-1$
+            String dsClassName = dsElement.getAttribute(RegistryConstants.ATTR_CLASS);
+            if (dsId == null && dsClassName == null) {
+                log.warn("Datasource reference with null ID/Class"); //$NON-NLS-1$
                 continue;
             }
-            DataSourceProviderDescriptor dsProvider = DataSourceProviderRegistry.getInstance().getDataSourceProvider(dsId);
-            if (dsProvider == null) {
-                log.warn("Datasource provider '" + dsId + "' not found. Bad data type mapping."); //$NON-NLS-1$
-                continue;
-            }
-            supportedDataSources.add(dsProvider);
+            supportedDataSources.add(dsId != null ? dsId : dsClassName);
         }
     }
 
@@ -167,14 +160,9 @@ public abstract class DataTypeAbstractDescriptor<DESCRIPTOR> extends AbstractDes
         return supportedDataSources.isEmpty();
     }
 
-    public boolean supportsDataSource(DataSourceProviderDescriptor descriptor)
+    public boolean supportsDataSource(DBPDataSource dataSource, DataSourceProviderDescriptor descriptor)
     {
-        return supportedDataSources.contains(descriptor);
-    }
-
-    public Set<DataSourceProviderDescriptor> getSupportedDataSources()
-    {
-        return supportedDataSources;
+        return supportedDataSources.contains(descriptor.getId()) || supportedDataSources.contains(dataSource.getClass().getName());
     }
 
     @Override

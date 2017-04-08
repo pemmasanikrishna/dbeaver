@@ -1,45 +1,44 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql.syntax;
 
-import org.jkiss.dbeaver.Log;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.DocumentEvent;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.text.ITextViewer;
 import org.eclipse.jface.text.contentassist.ICompletionProposal;
 import org.eclipse.jface.text.contentassist.ICompletionProposalExtension2;
+import org.eclipse.jface.text.contentassist.ICompletionProposalExtension5;
 import org.eclipse.jface.text.contentassist.IContextInformation;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.Point;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.DBPKeywordType;
 import org.jkiss.dbeaver.model.DBPNamedObject;
-import org.jkiss.dbeaver.model.DBValueFormatting;
-import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
-import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
-import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.DBUtils;
+import org.jkiss.dbeaver.model.runtime.DefaultProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLSyntaxManager;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.jkiss.dbeaver.model.struct.DBSObjectReference;
-import org.jkiss.dbeaver.runtime.properties.PropertyCollector;
 import org.jkiss.dbeaver.ui.TextUtils;
 import org.jkiss.dbeaver.ui.editors.sql.SQLPreferenceConstants;
 import org.jkiss.utils.CommonUtils;
@@ -49,11 +48,11 @@ import java.util.Locale;
 /**
  * SQL Completion proposal
  */
-public class SQLCompletionProposal implements ICompletionProposal, ICompletionProposalExtension2 {
+public class SQLCompletionProposal implements ICompletionProposal, ICompletionProposalExtension2,ICompletionProposalExtension5 {
 
     private static final Log log = Log.getLog(SQLCompletionProposal.class);
-    private final DBPDataSource dataSource;
 
+    private final DBPDataSource dataSource;
     private SQLSyntaxManager syntaxManager;
 
     /** The string to be displayed in the completion proposal popup. */
@@ -72,7 +71,7 @@ public class SQLCompletionProposal implements ICompletionProposal, ICompletionPr
     private Image image;
     /** The context information of this proposal. */
     private IContextInformation contextInformation;
-    /** The additional info of this proposal. */
+    private DBPKeywordType proposalType;
     private String additionalProposalInfo;
     private boolean simpleMode;
 
@@ -85,14 +84,15 @@ public class SQLCompletionProposal implements ICompletionProposal, ICompletionPr
         int cursorPosition,
         @Nullable Image image,
         IContextInformation contextInformation,
-        String additionalProposalInfo,
+        DBPKeywordType proposalType,
+        String description,
         DBPNamedObject object)
     {
         this.dataSource = request.editor.getDataSource();
         this.syntaxManager = request.editor.getSyntaxManager();
         this.displayString = displayString;
         this.replacementString = replacementString;
-        this.replacementFull = replacementString.toLowerCase(Locale.ENGLISH);
+        this.replacementFull = DBUtils.getUnQuotedIdentifier(this.dataSource, replacementString.toLowerCase(Locale.ENGLISH));
         int divPos = this.replacementFull.lastIndexOf(syntaxManager.getStructSeparator());
         if (divPos == -1) {
             this.replacementLast = null;
@@ -102,42 +102,13 @@ public class SQLCompletionProposal implements ICompletionProposal, ICompletionPr
         this.cursorPosition = cursorPosition;
         this.image = image;
         this.contextInformation = contextInformation;
-        this.additionalProposalInfo = additionalProposalInfo;
+        this.proposalType = proposalType;
+        this.additionalProposalInfo = description;
 
         setPosition(request.wordDetector);
 
         this.object = object;
         this.simpleMode = request.simpleMode;
-    }
-
-    public static String makeObjectDescription(DBRProgressMonitor monitor, DBPNamedObject object, boolean html) {
-        StringBuilder info = new StringBuilder();
-        PropertyCollector collector = new PropertyCollector(object, false);
-        collector.collectProperties();
-        for (DBPPropertyDescriptor descriptor : collector.getPropertyDescriptors2()) {
-            if (descriptor.isRemote()) {
-                // Skip lazy properties
-                continue;
-            }
-            Object propValue = collector.getPropertyValue(monitor, descriptor.getId());
-            if (propValue == null) {
-                continue;
-            }
-            String propString;
-            if (propValue instanceof DBPNamedObject) {
-                propString = ((DBPNamedObject) propValue).getName();
-            } else {
-                propString = DBValueFormatting.getDefaultValueDisplayString(propValue, DBDDisplayFormat.UI);
-            }
-            if (html) {
-                info.append("<b>").append(descriptor.getDisplayName()).append(":  </b>");
-                info.append(propString);
-                info.append("<br>");
-            } else {
-                info.append(descriptor.getDisplayName()).append(": ").append(propString).append("\n");
-            }
-        }
-        return info.toString();
     }
 
     public DBPNamedObject getObject() {
@@ -206,12 +177,17 @@ public class SQLCompletionProposal implements ICompletionProposal, ICompletionPr
     }
 
     @Override
-    public String getAdditionalProposalInfo()
-    {
-        if (additionalProposalInfo == null && object != null) {
-            additionalProposalInfo = makeObjectDescription(VoidProgressMonitor.INSTANCE, object, true);
+    public Object getAdditionalProposalInfo(IProgressMonitor monitor) {
+        if (additionalProposalInfo == null) {
+            additionalProposalInfo = SQLContextInformer.readAdditionalProposalInfo(new DefaultProgressMonitor(monitor), dataSource, object, new String[] {displayString}, proposalType);
         }
         return additionalProposalInfo;
+    }
+
+    @Override
+    public String getAdditionalProposalInfo()
+    {
+        return CommonUtils.toString(getAdditionalProposalInfo(new NullProgressMonitor()));
     }
 
     @Override
@@ -256,6 +232,9 @@ public class SQLCompletionProposal implements ICompletionProposal, ICompletionPr
     @Override
     public boolean validate(IDocument document, int offset, DocumentEvent event)
     {
+        if (event == null) {
+            return false;
+        }
         final SQLWordPartDetector wordDetector = new SQLWordPartDetector(document, syntaxManager, offset);
         String wordPart = wordDetector.getWordPart();
         int divPos = wordPart.lastIndexOf(syntaxManager.getStructSeparator());
@@ -301,4 +280,6 @@ public class SQLCompletionProposal implements ICompletionProposal, ICompletionPr
     public String toString() {
         return displayString;
     }
+
+
 }

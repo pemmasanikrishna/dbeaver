@@ -1,28 +1,29 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.actions;
 
 import org.eclipse.core.expressions.PropertyTester;
 import org.eclipse.swt.widgets.Display;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.DBPOrderedObject;
 import org.jkiss.dbeaver.model.edit.DBEObjectMaker;
 import org.jkiss.dbeaver.model.edit.DBEObjectManager;
 import org.jkiss.dbeaver.model.edit.DBEObjectRenamer;
+import org.jkiss.dbeaver.model.edit.DBEObjectReorderer;
 import org.jkiss.dbeaver.model.navigator.*;
 import org.jkiss.dbeaver.model.app.DBPResourceHandler;
 import org.jkiss.dbeaver.model.struct.DBSObject;
@@ -44,6 +45,8 @@ public class ObjectPropertyTester extends PropertyTester
     public static final String PROP_CAN_PASTE = "canPaste";
     public static final String PROP_CAN_DELETE = "canDelete";
     public static final String PROP_CAN_RENAME = "canRename";
+    public static final String PROP_CAN_MOVE_UP = "canMoveUp";
+    public static final String PROP_CAN_MOVE_DOWN = "canMoveDown";
     public static final String PROP_CAN_FILTER = "canFilter";
     public static final String PROP_CAN_FILTER_OBJECT = "canFilterObject";
     public static final String PROP_HAS_FILTER = "hasFilter";
@@ -52,6 +55,7 @@ public class ObjectPropertyTester extends PropertyTester
         super();
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public boolean test(Object receiver, String property, Object[] args, Object expectedValue) {
 
@@ -63,6 +67,7 @@ public class ObjectPropertyTester extends PropertyTester
             return false;
         }
         DBNNode node = (DBNNode)receiver;
+//System.out.println("TEST " + property + " ON " + node.getName());
 
         switch (property) {
             case PROP_CAN_OPEN:
@@ -154,8 +159,26 @@ public class ObjectPropertyTester extends PropertyTester
                     return
                         object != null &&
                             !isReadOnly(object) &&
+                            object.isPersisted() &&
                             node.getParentNode() instanceof DBNContainer &&
                             getObjectManager(object.getClass(), DBEObjectRenamer.class) != null;
+                }
+                break;
+            }
+            case PROP_CAN_MOVE_UP:
+            case PROP_CAN_MOVE_DOWN: {
+                if (node instanceof DBNDatabaseNode) {
+                    DBSObject object = ((DBNDatabaseNode) node).getObject();
+                    if (object instanceof DBPOrderedObject) {
+                        DBEObjectReorderer objectReorderer = getObjectManager(object.getClass(), DBEObjectReorderer.class);
+                        if (objectReorderer != null) {
+                            final int position = ((DBPOrderedObject) object).getOrdinalPosition();
+                            if (property.equals(PROP_CAN_MOVE_UP)) {
+                                return position > objectReorderer.getMinimumOrdinalPosition(object);
+                            }
+                            return position < objectReorderer.getMaximumOrdinalPosition(object);
+                        }
+                    }
                 }
                 break;
             }
@@ -180,7 +203,11 @@ public class ObjectPropertyTester extends PropertyTester
                 }
                 if (node instanceof DBNDatabaseFolder && ((DBNDatabaseFolder) node).getItemsMeta() != null) {
                     DBSObjectFilter filter = ((DBNDatabaseFolder) node).getNodeFilter(((DBNDatabaseFolder) node).getItemsMeta(), true);
-                    return filter != null && !filter.isNotApplicable();
+                    if ("defined".equals(expectedValue)) {
+                        return filter != null && !filter.isEmpty();
+                    } else {
+                        return filter != null && !filter.isNotApplicable();
+                    }
                 }
                 break;
             }

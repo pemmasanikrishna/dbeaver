@@ -1,23 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.preferences;
 
+import org.eclipse.jface.fieldassist.SimpleContentProposalProvider;
+import org.eclipse.jface.fieldassist.TextContentAdapter;
 import org.eclipse.jface.text.source.ISourceViewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyledText;
@@ -34,8 +35,8 @@ import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DBPIdentifierCase;
-import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
+import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.sql.format.external.SQLExternalFormatter;
 import org.jkiss.dbeaver.model.sql.format.tokenized.SQLTokenizedFormatter;
 import org.jkiss.dbeaver.ui.UIUtils;
@@ -177,14 +178,23 @@ public class PrefPageSQLFormat extends TargetPrefPage
 
         // External formatter
         {
-            externalGroup = UIUtils.createPlaceholder(formatterGroup, 2);
-            externalGroup.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING));
+            externalGroup = UIUtils.createPlaceholder(formatterGroup, 2, 5);
+            externalGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL | GridData.HORIZONTAL_ALIGN_BEGINNING));
 
             externalCmdText = UIUtils.createLabelText(externalGroup, "Command line", "");
             externalCmdText.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            UIUtils.installContentProposal(
+                    externalCmdText,
+                    new TextContentAdapter(),
+                    new SimpleContentProposalProvider(new String[] {
+                            GeneralUtils.variablePattern(SQLExternalFormatter.VAR_FILE)
+                    }));
+            UIUtils.setContentProposalToolTip(externalCmdText, "External program with parameters", SQLExternalFormatter.VAR_FILE);
+
             externalUseFile = UIUtils.createLabelCheckbox(externalGroup,
                 "Use temp file",
-                "Use temporary file to pass SQL text.\nTo pass file name in command line use parameter ${file}", false);
+                "Use temporary file to pass SQL text.\nTo pass file name in command line use parameter " + GeneralUtils.variablePattern(SQLExternalFormatter.VAR_FILE),
+                false);
             externalTimeout = UIUtils.createLabelSpinner(externalGroup,
                 "Exec timeout",
                 "Time to wait until formatter process finish (ms)",

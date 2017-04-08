@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.impl.jdbc;
 
@@ -35,10 +34,10 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCObjectValueHandler;
 import org.jkiss.dbeaver.model.impl.jdbc.exec.JDBCConnectionImpl;
 import org.jkiss.dbeaver.model.impl.jdbc.exec.JDBCFactoryDefault;
-import org.jkiss.dbeaver.model.impl.sql.BasicSQLDialect;
 import org.jkiss.dbeaver.model.messages.ModelMessages;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.DBRRunnableWithProgress;
 import org.jkiss.dbeaver.model.sql.SQLDataSource;
 import org.jkiss.dbeaver.model.sql.SQLDialect;
 import org.jkiss.dbeaver.model.sql.SQLState;
@@ -46,8 +45,11 @@ import org.jkiss.dbeaver.model.struct.DBSDataType;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.jkiss.dbeaver.utils.GeneralUtils;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.lang.reflect.InvocationTargetException;
+import java.net.SocketException;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -72,31 +74,45 @@ public abstract class JDBCDataSource
 {
     private static final Log log = Log.getLog(JDBCDataSource.class);
 
+    public static final int DISCONNECT_TIMEOUT = 5000;
+
     @NotNull
     private final DBPDataSourceContainer container;
     @NotNull
-    protected final JDBCExecutionContext executionContext;
+    protected JDBCExecutionContext executionContext;
     @Nullable
     protected JDBCExecutionContext metaContext;
     @NotNull
     private final List<JDBCExecutionContext> allContexts = new ArrayList<>();
     @NotNull
     protected volatile DBPDataSourceInfo dataSourceInfo;
-    protected volatile SQLDialect sqlDialect;
+    protected final SQLDialect sqlDialect;
     protected final JDBCFactory jdbcFactory;
 
     private int databaseMajorVersion;
     private int databaseMinorVersion;
 
-    public JDBCDataSource(@NotNull DBRProgressMonitor monitor, @NotNull DBPDataSourceContainer container)
+    protected JDBCDataSource(@NotNull DBRProgressMonitor monitor, @NotNull DBPDataSourceContainer container, @NotNull SQLDialect dialect)
+        throws DBException
+    {
+        this(monitor, container, dialect, true);
+    }
+
+    protected JDBCDataSource(@NotNull DBRProgressMonitor monitor, @NotNull DBPDataSourceContainer container, @NotNull SQLDialect dialect, boolean initContext)
         throws DBException
     {
         this.dataSourceInfo = new JDBCDataSourceInfo(container);
-        this.sqlDialect = BasicSQLDialect.INSTANCE;
+        this.sqlDialect = dialect;
         this.jdbcFactory = createJdbcFactory();
         this.container = container;
+        if (initContext) {
+            initializeMainContext(monitor);
+        }
+    }
+
+    protected void initializeMainContext(@NotNull DBRProgressMonitor monitor) throws DBCException {
         this.executionContext = new JDBCExecutionContext(this, "Main");
-        this.executionContext.connect(monitor, null, null, false);
+        this.executionContext.connect(monitor, null, null, false, true);
     }
 
     protected Connection openConnection(@NotNull DBRProgressMonitor monitor, @NotNull String purpose)
@@ -115,7 +131,7 @@ public abstract class JDBCDataSource
 
         {
             // Use properties defined by datasource itself
-            Map<String,String> internalProps = getInternalConnectionProperties(monitor);
+            Map<String,String> internalProps = getInternalConnectionProperties(monitor, purpose);
             if (internalProps != null) {
                 connectProps.putAll(internalProps);
             }
@@ -130,7 +146,7 @@ public abstract class JDBCDataSource
         }
 
         DBPConnectionConfiguration connectionInfo = container.getActualConnectionConfiguration();
-        for (Map.Entry<Object,Object> prop : connectionInfo.getProperties().entrySet()) {
+        for (Map.Entry<String, String> prop : connectionInfo.getProperties().entrySet()) {
             connectProps.setProperty(CommonUtils.toString(prop.getKey()), CommonUtils.toString(prop.getValue()));
         }
         if (!CommonUtils.isEmpty(connectionInfo.getUserName())) {
@@ -152,6 +168,7 @@ public abstract class JDBCDataSource
                     log.debug("Error in " + driverInstance.getClass().getName() + ".acceptsURL() - " + url, e);
                 }
             }
+            monitor.subTask("Connecting " + purpose);
             Connection connection;
             if (driverInstance == null) {
                 connection = DriverManager.getConnection(url, connectProps);
@@ -184,26 +201,32 @@ public abstract class JDBCDataSource
         return connectionInfo.getUrl();
     }
 
-    protected void closeConnection(Connection connection)
+    protected void closeConnection(final Connection connection, String purpose)
     {
         if (connection != null) {
-            try {
-                // If we in transaction - rollback it.
-                // Any valuable transaction changes should be commited by UI
-                // so here we do it just in case to avoid error messages on close with open transaction
-                if (!connection.getAutoCommit()) {
-                    connection.rollback();
+            // Close datasource (in async task)
+            RuntimeUtils.runTask(new DBRRunnableWithProgress() {
+                @Override
+                public void run(DBRProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
+                    try {
+                        // If we in transaction - rollback it.
+                        // Any valuable transaction changes should be committed by UI
+                        // so here we do it just in case to avoid error messages on close with open transaction
+                        if (!connection.getAutoCommit()) {
+                            connection.rollback();
+                        }
+                    } catch (Throwable e) {
+                        // Do not write warning because connection maybe broken before the moment of close
+                        log.debug("Error closing transaction", e);
+                    }
+                    try {
+                        connection.close();
+                    }
+                    catch (Throwable ex) {
+                        log.error("Error closing connection", ex);
+                    }
                 }
-            } catch (Throwable e) {
-                // Do not write warning because connection maybe broken before the moment of close
-                log.debug("Error closing transaction", e);
-            }
-            try {
-                connection.close();
-            }
-            catch (Throwable ex) {
-                log.error("Error closing connection", ex);
-            }
+            }, "Close JDBC connection (" + purpose + ")", DISCONNECT_TIMEOUT);
         }
     }
 
@@ -223,7 +246,7 @@ public abstract class JDBCDataSource
     public DBCExecutionContext openIsolatedContext(@NotNull DBRProgressMonitor monitor, @NotNull String purpose) throws DBException
     {
         JDBCExecutionContext context = new JDBCExecutionContext(this, purpose);
-        context.connect(monitor, null, null, true);
+        context.connect(monitor, null, null, true, true);
         return context;
     }
 
@@ -300,13 +323,21 @@ public abstract class JDBCDataSource
         throws DBException
     {
         if (!container.getDriver().isEmbedded() && container.getPreferenceStore().getBoolean(ModelPreferences.META_SEPARATE_CONNECTION)) {
-            synchronized (this) {
+            synchronized (allContexts) {
                 this.metaContext = new JDBCExecutionContext(this, "Metadata");
-                this.metaContext.connect(monitor, true, null, false);
+                this.metaContext.connect(monitor, true, null, false, true);
             }
         }
         try (JDBCSession session = DBUtils.openMetaSession(monitor, this, ModelMessages.model_jdbc_read_database_meta_data)) {
             JDBCDatabaseMetaData metaData = session.getMetaData();
+
+            if (this.sqlDialect instanceof JDBCSQLDialect) {
+                try {
+                    ((JDBCSQLDialect) this.sqlDialect).initDriverSettings(this, metaData);
+                } catch (Throwable e) {
+                    log.error("Error initializing dialect driver settings", e);
+                }
+            }
 
             try {
                 databaseMajorVersion = metaData.getDatabaseMajorVersion();
@@ -316,11 +347,6 @@ public abstract class JDBCDataSource
             }
 
             try {
-                sqlDialect = createSQLDialect(metaData);
-            } catch (Throwable e) {
-                log.error("Error creating SQL dialect", e);
-            }
-            try {
                 dataSourceInfo = createDataSourceInfo(metaData);
             } catch (Throwable e) {
                 log.error("Error obtaining database info");
@@ -328,10 +354,6 @@ public abstract class JDBCDataSource
         } catch (SQLException ex) {
             throw new DBException("Error getting JDBC meta data", ex, this);
         } finally {
-            if (sqlDialect == null) {
-                log.warn("NULL SQL dialect was created");
-                sqlDialect = BasicSQLDialect.INSTANCE;
-            }
             if (dataSourceInfo == null) {
                 log.warn("NULL datasource info was created");
                 dataSourceInfo = new JDBCDataSourceInfo(container);
@@ -340,14 +362,16 @@ public abstract class JDBCDataSource
     }
 
     @Override
-    public void close()
+    public void shutdown(DBRProgressMonitor monitor)
     {
         // [JDBC] Need sync here because real connection close could take some time
         // while UI may invoke callbacks to operate with connection
-        synchronized (this) {
-            executionContext.close();
-            if (metaContext != null) {
-                metaContext.close();
+        synchronized (allContexts) {
+            List<JDBCExecutionContext> ctxCopy = new ArrayList<>(allContexts);
+            for (JDBCExecutionContext context : ctxCopy) {
+                monitor.subTask("Close context '" + context.getContextName() + "'");
+                context.close();
+                monitor.worked(1);
             }
         }
     }
@@ -547,10 +571,9 @@ public abstract class JDBCDataSource
      * Could be overridden by extenders. May contain any additional connection properties.
      * Note: these properties may be overwritten by connection advanced properties.
      * @return predefined connection properties
-     * @param monitor
      */
     @Nullable
-    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor)
+    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor, String purpose)
         throws DBCException
     {
         return null;
@@ -559,11 +582,6 @@ public abstract class JDBCDataSource
     protected DBPDataSourceInfo createDataSourceInfo(@NotNull JDBCDatabaseMetaData metaData)
     {
         return new JDBCDataSourceInfo(metaData);
-    }
-
-    protected SQLDialect createSQLDialect(@NotNull JDBCDatabaseMetaData metaData)
-    {
-        return new JDBCSQLDialect("JDBC", metaData);
     }
 
     @NotNull
@@ -575,15 +593,19 @@ public abstract class JDBCDataSource
     // Error assistance
 
     @Override
-    public ErrorType discoverErrorType(@NotNull DBException error)
+    public ErrorType discoverErrorType(@NotNull Throwable error)
     {
-        String sqlState = error.getDatabaseState();
-        if (SQLState.SQL_08000.getCode().equals(sqlState) ||
-            SQLState.SQL_08003.getCode().equals(sqlState) ||
-            SQLState.SQL_08006.getCode().equals(sqlState) ||
-            SQLState.SQL_08007.getCode().equals(sqlState) ||
-            SQLState.SQL_08S01.getCode().equals(sqlState))
-        {
+        String sqlState = SQLState.getStateFromException(error);
+        if (sqlState != null) {
+            if (SQLState.SQL_08000.getCode().equals(sqlState) ||
+                    SQLState.SQL_08003.getCode().equals(sqlState) ||
+                    SQLState.SQL_08006.getCode().equals(sqlState) ||
+                    SQLState.SQL_08007.getCode().equals(sqlState) ||
+                    SQLState.SQL_08S01.getCode().equals(sqlState)) {
+                return ErrorType.CONNECTION_LOST;
+            }
+        }
+        if (GeneralUtils.getRootCause(error) instanceof SocketException) {
             return ErrorType.CONNECTION_LOST;
         }
         if (error instanceof DBCConnectException) {
@@ -599,7 +621,7 @@ public abstract class JDBCDataSource
 
     @Nullable
     @Override
-    public ErrorPosition[] getErrorPosition(@NotNull DBCSession session, @NotNull String query, @NotNull Throwable error) {
+    public ErrorPosition[] getErrorPosition(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext context, @NotNull String query, @NotNull Throwable error) {
         return null;
     }
 

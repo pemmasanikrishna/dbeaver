@@ -1,30 +1,26 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.model;
 
 import org.eclipse.core.runtime.IAdaptable;
-import org.eclipse.core.runtime.IProduct;
-import org.eclipse.core.runtime.Platform;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.PostgreDataSourceProvider;
 import org.jkiss.dbeaver.ext.postgresql.PostgreUtils;
@@ -38,6 +34,7 @@ import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.exec.*;
 import org.jkiss.dbeaver.model.exec.jdbc.*;
 import org.jkiss.dbeaver.model.exec.plan.DBCPlan;
+import org.jkiss.dbeaver.model.exec.plan.DBCPlanStyle;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
@@ -67,18 +64,17 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
     private final DatabaseCache databaseCache = new DatabaseCache();
     private String activeDatabaseName;
     private String activeSchemaName;
-    private boolean databaseSwitchInProgress;
     private final List<String> searchPath = new ArrayList<>();
     private String activeUser;
 
     public PostgreDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container)
         throws DBException
     {
-        super(monitor, container);
+        super(monitor, container, new PostgreDialect());
     }
 
     @Override
-    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor) throws DBCException
+    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor, String purpose) throws DBCException
     {
         Map<String, String> props = new LinkedHashMap<>(PostgreDataSourceProvider.getConnectionsProps());
         final DBWHandlerConfiguration sslConfig = getContainer().getActualConnectionConfiguration().getDeclaredHandler(PostgreConstants.HANDLER_SSL);
@@ -125,15 +121,20 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
             if (activeDatabase != null) {
                 final PostgreSchema activeSchema = activeDatabase.getDefaultObject();
                 if (activeSchema != null) {
-                    activeDatabase.setSearchPath(monitor, activeSchema, context);
+
+                    // Check default active schema
+                    String curDefSchema;
+                    try (JDBCSession session = context.openSession(monitor, DBCExecutionPurpose.META, "Get context active schema")) {
+                        curDefSchema = JDBCUtils.queryString(session, "SELECT current_schema()");
+                    } catch (SQLException e) {
+                        throw new DBCException(e, getDataSource());
+                    }
+                    if (curDefSchema == null || !curDefSchema.equals(activeSchema.getName())) {
+                        activeDatabase.setSearchPath(monitor, activeSchema, context);
+                    }
                 }
             }
         }
-    }
-
-    @Override
-    protected PostgreDialect createSQLDialect(@NotNull JDBCDatabaseMetaData metaData) {
-        return new PostgreDialect(metaData);
     }
 
     public DatabaseCache getDatabaseCache()
@@ -185,7 +186,7 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
         if (searchPathStr != null) {
             for (String str : searchPathStr.replace("$user", activeUser).split(",")) {
                 str = str.trim();
-                this.searchPath.add(DBUtils.getUnQuotedIdentifier(str, "\""));
+                this.searchPath.add(DBUtils.getUnQuotedIdentifier(this, str));
             }
         } else {
             this.searchPath.add(PostgreConstants.PUBLIC_SCHEMA_NAME);
@@ -243,7 +244,7 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
     @Override
     public PostgreDatabase getDefaultObject()
     {
-        return getDatabase(activeDatabaseName);
+        return activeDatabaseName == null ? null : getDatabase(activeDatabaseName);
     }
 
     @Override
@@ -265,16 +266,10 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
         // 2. Reconnect all open contexts
         // 3. Refresh datasource tree
         activeDatabaseName = object.getName();
-        try {
-            databaseSwitchInProgress = true;
-            for (JDBCExecutionContext context : getAllContexts()) {
-                context.reconnect(monitor);
-            }
-            getDefaultInstance().cacheDataTypes(monitor);
+        for (JDBCExecutionContext context : getAllContexts()) {
+            context.reconnect(monitor);
         }
-        finally {
-            databaseSwitchInProgress = false;
-        }
+        getDefaultInstance().cacheDataTypes(monitor);
 
         if (oldDatabase != null) {
             DBUtils.fireObjectSelect(oldDatabase, false);
@@ -334,8 +329,9 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
     @Override
     protected Connection openConnection(@NotNull DBRProgressMonitor monitor, @NotNull String purpose) throws DBCException {
         Connection pgConnection;
-        if (databaseSwitchInProgress) {
-            final DBPConnectionConfiguration conConfig = getContainer().getActualConnectionConfiguration();
+        final DBPConnectionConfiguration conConfig = getContainer().getActualConnectionConfiguration();
+        if (activeDatabaseName != null && !CommonUtils.equalObjects(activeDatabaseName, conConfig.getDatabaseName())) {
+            // If database was changed then use new name for connection
             final DBPConnectionConfiguration originalConfig = new DBPConnectionConfiguration(conConfig);
             try {
                 // Patch URL with new database name
@@ -354,27 +350,32 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
 
         {
             // Provide client info
-            IProduct product = Platform.getProduct();
-            if (product != null) {
-                String appName = DBeaverCore.getProductTitle();
-                try {
-                    pgConnection.setClientInfo("ApplicationName", appName + " - " + purpose);
-                } catch (Throwable e) {
-                    // just ignore
-                    log.debug(e);
-                }
+            try {
+                pgConnection.setClientInfo("ApplicationName", DBUtils.getClientApplicationName(getContainer(), purpose));
+            } catch (Throwable e) {
+                // just ignore
+                log.debug(e);
             }
         }
 
         return pgConnection;
     }
 
+    @NotNull
     @Override
-    public DBCPlan planQueryExecution(DBCSession session, String query) throws DBCException
+    public DBCPlan planQueryExecution(@NotNull DBCSession session, @NotNull String query) throws DBCException
     {
-        PostgrePlanAnalyser plan = new PostgrePlanAnalyser(query);
-        plan.explain(session);
+        PostgrePlanAnalyser plan = new PostgrePlanAnalyser(getPlanStyle() == DBCPlanStyle.QUERY, query);
+        if (getPlanStyle() == DBCPlanStyle.PLAN) {
+            plan.explain(session);
+        }
         return plan;
+    }
+
+    @NotNull
+    @Override
+    public DBCPlanStyle getPlanStyle() {
+        return isServerVersionAtLeast(9, 0) ? DBCPlanStyle.PLAN : DBCPlanStyle.QUERY;
     }
 
     @Override
@@ -481,7 +482,7 @@ public class PostgreDataSource extends JDBCDataSource implements DBSObjectSelect
 
     @Nullable
     @Override
-    public ErrorPosition[] getErrorPosition(@NotNull DBCSession session, @NotNull String query, @NotNull Throwable error) {
+    public ErrorPosition[] getErrorPosition(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext context, @NotNull String query, @NotNull Throwable error) {
         String message = error.getMessage();
         if (!CommonUtils.isEmpty(message)) {
             Matcher matcher = ERROR_POSITION_PATTERN.matcher(message);

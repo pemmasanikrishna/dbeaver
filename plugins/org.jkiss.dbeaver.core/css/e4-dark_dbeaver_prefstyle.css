@@ -1,36 +1,21 @@
-/*******************************************************************************
- * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-*******************************************************************************/
 
 /* ############################# DBeaver preferences ############################# */
 
  IEclipsePreferences#org-eclipse-ui-workbench {
         preferences:
-            'org.jkiss.dbeaver.sql.resultset.color.cell.odd.background=COLOR_BLACK'
-            'org.jkiss.dbeaver.sql.resultset.color.cell.modified.background=180,128,128'
-            'org.jkiss.dbeaver.sql.resultset.color.cell.new.background=128,180,128'
-            'org.jkiss.dbeaver.sql.resultset.color.cell.deleted.background=128,128,180'
+            'org.jkiss.dbeaver.sql.resultset.color.cell.odd.background=16,16,16'
+            'org.jkiss.dbeaver.sql.resultset.color.cell.modified.background=210,68,0'
+            'org.jkiss.dbeaver.sql.resultset.color.cell.new.background=0,115,0'
+            'org.jkiss.dbeaver.sql.resultset.color.cell.deleted.background=140,0,0'
+            'org.jkiss.dbeaver.sql.resultset.color.lines.normal=64,64,64'
+            'org.jkiss.dbeaver.sql.resultset.color.lines.selected=105,105,105'
             'org.jkiss.dbeaver.sql.editor.color.text.foreground=221,221,221'
             'org.jkiss.dbeaver.sql.editor.color.text.background=65,70,74'
             'org.jkiss.dbeaver.sql.editor.color.disabled.background=0,0,0'
             'org.jkiss.dbeaver.sql.editor.color.keyword.foreground=255,128,64'
             'org.jkiss.dbeaver.sql.editor.color.datatype.foreground=255,255,128'
-            'org.jkiss.dbeaver.sql.editor.color.string.foreground=COLOR_DARK_GREEN'
+            'org.jkiss.dbeaver.sql.editor.color.string.foreground=144,238,144'
             'org.jkiss.dbeaver.sql.editor.color.number.foreground=0,128,128'
-            'org.jkiss.dbeaver.sql.editor.color.comment.foreground=COLOR_DARK_GRAY'
-            'org.jkiss.dbeaver.sql.editor.color.delimiter.foreground=COLOR_RED'
+            'org.jkiss.dbeaver.sql.editor.color.comment.foreground=169,169,169'
+            'org.jkiss.dbeaver.sql.editor.color.delimiter.foreground=255,0,0'
 }

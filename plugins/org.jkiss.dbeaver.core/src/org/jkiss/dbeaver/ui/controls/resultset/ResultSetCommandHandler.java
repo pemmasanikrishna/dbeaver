@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls.resultset;
 
@@ -37,6 +36,7 @@ import org.eclipse.ui.texteditor.FindReplaceAction;
 import org.eclipse.ui.texteditor.ITextEditorActionDefinitionIds;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.core.CoreCommands;
 import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.core.DBeaverActivator;
@@ -55,6 +55,7 @@ import org.jkiss.dbeaver.ui.data.managers.BaseValueManager;
 import org.jkiss.dbeaver.ui.dialogs.sql.ViewSQLDialog;
 import org.jkiss.dbeaver.ui.editors.MultiPageAbstractEditor;
 import org.jkiss.dbeaver.utils.GeneralUtils;
+import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -68,6 +69,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
 
     public static final String CMD_TOGGLE_PANELS = "org.jkiss.dbeaver.core.resultset.grid.togglePreview";
     public static final String CMD_TOGGLE_MODE = "org.jkiss.dbeaver.core.resultset.toggleMode";
+    public static final String CMD_FOCUS_FILTER = "org.jkiss.dbeaver.core.resultset.focus.filter";
     public static final String CMD_SWITCH_PRESENTATION = "org.jkiss.dbeaver.core.resultset.switchPresentation";
     public static final String CMD_ROW_FIRST = "org.jkiss.dbeaver.core.resultset.row.first";
     public static final String CMD_ROW_PREVIOUS = "org.jkiss.dbeaver.core.resultset.row.previous";
@@ -110,18 +112,20 @@ public class ResultSetCommandHandler extends AbstractHandler {
         if (rsv == null) {
             return null;
         }
-        boolean shiftPressed = event.getTrigger() instanceof Event && ((((Event)event.getTrigger()).stateMask & SWT.SHIFT) == SWT.SHIFT);
         String actionId = event.getCommand().getId();
         IResultSetPresentation presentation = rsv.getActivePresentation();
         switch (actionId) {
             case IWorkbenchCommandConstants.FILE_REFRESH:
-                rsv.refresh();
+                rsv.refreshData(null);
                 break;
             case CMD_TOGGLE_MODE:
                 rsv.toggleMode();
                 break;
             case CMD_TOGGLE_PANELS:
                 rsv.showPanels(!rsv.isPanelsVisible());
+                break;
+            case CMD_FOCUS_FILTER:
+                rsv.switchFilterFocus();
                 break;
             case CMD_SWITCH_PRESENTATION:
                 rsv.switchPresentation();
@@ -159,10 +163,12 @@ public class ResultSetCommandHandler extends AbstractHandler {
                 }
                 break;
             case CMD_ROW_ADD:
-                rsv.addNewRow(false, shiftPressed);
-                break;
             case CMD_ROW_COPY:
-                rsv.addNewRow(true, shiftPressed);
+                boolean copy = actionId.equals(CMD_ROW_COPY);
+                boolean shiftPressed = event.getTrigger() instanceof Event && ((((Event)event.getTrigger()).stateMask & SWT.SHIFT) == SWT.SHIFT);
+                boolean insertAfter = rsv.getPreferenceStore().getBoolean(DBeaverPreferences.RS_EDIT_NEW_ROWS_AFTER);
+                if (shiftPressed) insertAfter = !insertAfter;
+                rsv.addNewRow(copy, insertAfter);
                 break;
             case CMD_ROW_DELETE:
             case IWorkbenchCommandConstants.EDIT_DELETE:
@@ -189,7 +195,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
                         }
                     }
                 }
-                rsv.redrawData(false);
+                rsv.redrawData(false, false);
                 rsv.updatePanelsContent(false);
                 break;
             }
@@ -247,7 +253,11 @@ public class ResultSetCommandHandler extends AbstractHandler {
                     if (buffer.length() > 0) {
                         buffer.append("\t");
                     }
-                    buffer.append(attr.getName());
+                    String colName = attr.getLabel();
+                    if (CommonUtils.isEmpty(colName)) {
+                        colName = attr.getName();
+                    }
+                    buffer.append(colName);
                 }
                 ResultSetUtils.copyToClipboard(buffer.toString());
                 break;
@@ -267,7 +277,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
             case IWorkbenchCommandConstants.EDIT_COPY:
                 ResultSetUtils.copyToClipboard(
                     presentation.copySelectionToString(
-                        new ResultSetCopySettings(false, false, false, null, null, DBDDisplayFormat.EDIT)));
+                        new ResultSetCopySettings(false, false, false, true, null, null, DBDDisplayFormat.EDIT)));
                 break;
             case IWorkbenchCommandConstants.EDIT_PASTE:
             case CoreCommands.CMD_PASTE_SPECIAL:
@@ -278,7 +288,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
             case IWorkbenchCommandConstants.EDIT_CUT:
                 ResultSetUtils.copyToClipboard(
                     presentation.copySelectionToString(
-                        new ResultSetCopySettings(false, false, true, null, null, DBDDisplayFormat.EDIT))
+                        new ResultSetCopySettings(false, false, true, true, null, null, DBDDisplayFormat.EDIT))
                 );
                 break;
             case IWorkbenchCommandConstants.FILE_PRINT:

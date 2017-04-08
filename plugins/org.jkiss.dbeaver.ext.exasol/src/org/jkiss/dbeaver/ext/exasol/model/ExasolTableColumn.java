@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016-2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.model;
 
@@ -52,6 +51,7 @@ public class ExasolTableColumn extends JDBCTableColumn<ExasolTableBase>
     private Boolean isInDistKey;
     private String formatType;
     private Boolean changed = false;
+    private Boolean oriRequired;
 
     // -----------------
     // Constructors
@@ -60,14 +60,16 @@ public class ExasolTableColumn extends JDBCTableColumn<ExasolTableBase>
     public ExasolTableColumn(DBRProgressMonitor monitor, ExasolTableBase tableBase, ResultSet dbResult)
         throws DBException {
         super(tableBase, true);
-
+        
+        
         this.formatType = JDBCUtils.safeGetString(dbResult, "COLUMN_TYPE");
         setName(JDBCUtils.safeGetString(dbResult, "COLUMN_NAME"));
         setOrdinalPosition(JDBCUtils.safeGetInt(dbResult, "ORDINAL_POSITION"));
-        setRequired(JDBCUtils.safeGetBoolean(dbResult, "COLUMN_IS_NULLABLE"));
+        setRequired(! JDBCUtils.safeGetBoolean(dbResult, "COLUMN_IS_NULLABLE"));
         setDefaultValue(JDBCUtils.safeGetString(dbResult, "COLUMN_DEF"));
         setMaxLength(JDBCUtils.safeGetInt(dbResult, "COLUMN_SIZE"));
         setScale(JDBCUtils.safeGetInt(dbResult, "DECIMAL_DIGITS"));
+        
 
         this.isInDistKey = JDBCUtils.safeGetBoolean(dbResult, "COLUMN_IS_DISTRIBUTION_KEY");
         this.identity = JDBCUtils.safeGetInteger(dbResult, "COLUMN_IDENTITY") == null ? false : true;
@@ -75,6 +77,20 @@ public class ExasolTableColumn extends JDBCTableColumn<ExasolTableBase>
             this.identityValue = JDBCUtils.safeGetBigDecimal(dbResult, "COLUMN_IDENTITY");
         this.remarks = JDBCUtils.safeGetString(dbResult, "COLUMN_COMMENT");
         this.dataType = tableBase.getDataSource().getDataType(monitor, JDBCUtils.safeGetString(dbResult, "TYPE_NAME"));
+
+        // drivers > 5 have the issue that a cast from decimal without scale is made to matching integer in sql
+        // so meta data queries have to handle this case
+        if 	(tableBase.getDataSource().getDriverMajorVersion() > 5 && this.dataType.getName().equals("DECIMAL") && super.getScale() == 0)
+        {
+        	if (super.getMaxLength() <= 4) {
+        		this.dataType = tableBase.getDataSource().getDataType(monitor,"SMALLINT");
+			} else if (super.getMaxLength() > 4 && super.getMaxLength() <= 9 ) {
+        		this.dataType = tableBase.getDataSource().getDataType(monitor,"INTEGER");
+			} else if (super.getMaxLength() > 9 && super.getMaxLength() <= 18 ) {
+	    		this.dataType = tableBase.getDataSource().getDataType(monitor,"BIGINT");
+			}
+        }
+        
         this.changed = true;
 
 
@@ -197,6 +213,8 @@ public class ExasolTableColumn extends JDBCTableColumn<ExasolTableBase>
     }
 
     public void setRequired(boolean required) {
+    	if (changed && oriRequired == null)
+    		oriRequired = super.isRequired();
         super.setRequired(required);
     }
 
@@ -286,6 +304,12 @@ public class ExasolTableColumn extends JDBCTableColumn<ExasolTableBase>
 		}
 		return false;
 	}
+
+	@Property(hidden = true)
+    public Boolean isOriRequired()
+    {
+    	return oriRequired;
+    }
 
 	@Override
 	public boolean isInReferenceKey()

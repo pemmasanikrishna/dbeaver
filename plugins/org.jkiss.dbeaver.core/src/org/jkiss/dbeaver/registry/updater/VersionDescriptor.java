@@ -1,30 +1,28 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.registry.updater;
 
 import org.jkiss.dbeaver.runtime.WebUtils;
-import org.jkiss.utils.CommonUtils;
+import org.jkiss.utils.xml.SAXListener;
+import org.jkiss.utils.xml.SAXReader;
 import org.jkiss.utils.xml.XMLException;
-import org.jkiss.utils.xml.XMLUtils;
 import org.osgi.framework.Version;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
+import org.xml.sax.Attributes;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,8 +34,6 @@ import java.util.List;
  * Version descriptor
  */
 public class VersionDescriptor {
-
-    public static final String DEFAULT_VERSION_URL = "http://dbeaver.jkiss.org/product/version.xml";
 
     private String programName;
     private Version programVersion;
@@ -51,9 +47,8 @@ public class VersionDescriptor {
     public VersionDescriptor(String fileAddr)
         throws IOException
     {
-        try (InputStream inputStream = WebUtils.openConnectionStream(fileAddr)) {
-            Document document = XMLUtils.parseDocument(inputStream);
-            parseVersionInfo(document);
+        try (InputStream inputStream = WebUtils.openConnection(fileAddr).getInputStream()) {
+            parseVersionInfo(inputStream);
         } catch (XMLException e) {
             throw new IOException("XML parse error", e);
         }
@@ -94,21 +89,34 @@ public class VersionDescriptor {
         return updateSites;
     }
 
-    private void parseVersionInfo(Document document)
-    {
-        Element root = document.getDocumentElement();
-        programName = XMLUtils.getChildElementBody(root, "name");
-        programVersion = Version.parseVersion(XMLUtils.getChildElementBody(root, "number"));
-        updateTime = XMLUtils.getChildElementBody(root, "date");
-        baseURL = XMLUtils.getChildElementBody(root, "base-url");
-        releaseNotes = CommonUtils.toString(XMLUtils.getChildElementBody(root, "release-notes")).trim();
-
-        for (Element dist : XMLUtils.getChildElementList(root, "distribution")) {
-            distributions.add(new DistributionDescriptor(dist));
-        }
-
-        for (Element dist : XMLUtils.getChildElementList(root, "site")) {
-            updateSites.add(new UpdateSiteDescriptor(dist));
-        }
+    private void parseVersionInfo(InputStream inputStream) throws IOException, XMLException {
+        SAXReader parser = new SAXReader(inputStream);
+        SAXListener dsp = new SAXListener() {
+            private String lastTag;
+            private StringBuilder textBuffer = new StringBuilder();
+            @Override
+            public void saxStartElement(SAXReader reader, String namespaceURI, String localName, Attributes atts) throws XMLException {
+                lastTag = localName;
+                textBuffer.setLength(0);
+            }
+            @Override
+            public void saxText(SAXReader reader, String data) throws XMLException {
+                textBuffer.append(data);
+            }
+            @Override
+            public void saxEndElement(SAXReader reader, String namespaceURI, String localName) throws XMLException {
+                final String text = textBuffer.toString();
+                switch (lastTag) {
+                    case "name": programName = text; break;
+                    case "number": programVersion = Version.parseVersion(text); break;
+                    case "date": updateTime = text; break;
+                    case "base-url": baseURL = text; break;
+                    case "release-notes": releaseNotes = text; break;
+                }
+                textBuffer.setLength(0);
+            }
+        };
+        parser.parse(dsp);
     }
+
 }

@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016-2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.model.cache;
 
@@ -24,28 +23,25 @@ import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.exasol.model.ExasolSchema;
 import org.jkiss.dbeaver.ext.exasol.model.ExasolTable;
 import org.jkiss.dbeaver.ext.exasol.model.ExasolTableColumn;
+import org.jkiss.dbeaver.ext.exasol.tools.ExasolUtils;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCDatabaseMetaData;
-import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCStructCache;
-
+import org.jkiss.dbeaver.model.impl.jdbc.exec.JDBCStatementImpl;
 import java.sql.SQLException;
 
-/**
- * @author Karl
- */
 public final class ExasolTableCache
 		extends JDBCStructCache<ExasolSchema, ExasolTable, ExasolTableColumn> {
 
 	private static final String SQL_COLS_TAB = "select " + "	c.* " + "from "
 			+ "		 \"$ODBCJDBC\".\"ALL_COLUMNS\" c " + "where "
-			+ "	table_schem = ? and " + "	table_name = ? " + "order by "
+			+ "	table_schem = '%s' and " + "	table_name = '%s' " + "order by "
 			+ "	c.ordinal_position";
 	private static final String SQL_COLS_ALL = "select " + "	c.* " + "from "
 			+ "		 \"$ODBCJDBC\".\"ALL_COLUMNS\" c " + "where "
-			+ "	table_schem = ?" + "order by "
+			+ "	table_schem = '%s'" + "order by "
 			+ "	table_name,c.ordinal_position";
 
 	public ExasolTableCache()
@@ -64,6 +60,7 @@ public final class ExasolTableCache
 				new String[] { "TABLE" }).getSourceStatement();
 	}
 
+	@SuppressWarnings("rawtypes")
 	@Override
 	protected JDBCStatement prepareChildrenStatement(
 			@NotNull JDBCSession session, @NotNull ExasolSchema exasolSchema,
@@ -72,14 +69,13 @@ public final class ExasolTableCache
 		String sql;
 
 		if (exasolTable != null)
-			sql = SQL_COLS_TAB;
+			sql = String.format(SQL_COLS_TAB,ExasolUtils.quoteString(exasolSchema.getName()),ExasolUtils.quoteString(exasolTable.getName()));
 		else
-			sql = SQL_COLS_ALL;
+			sql = String.format(SQL_COLS_ALL,ExasolUtils.quoteString(exasolSchema.getName()));
 
-		JDBCPreparedStatement dbstat = session.prepareStatement(sql);
-		dbstat.setString(1, exasolSchema.getName());
-		if (exasolTable != null)
-			dbstat.setString(2, exasolTable.getName());
+		JDBCStatement dbstat = session.createStatement();
+		
+		((JDBCStatementImpl) dbstat).setQueryString(sql);
 
 		return dbstat;
 	}

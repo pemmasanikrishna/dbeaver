@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql.generator;
 
@@ -23,6 +22,7 @@ import org.eclipse.jface.viewers.ISelectionProvider;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.dnd.TextTransfer;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.actions.CompoundContributionItem;
 import org.jkiss.code.NotNull;
@@ -32,6 +32,8 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.model.data.DBDRowIdentifier;
+import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -48,6 +50,7 @@ import org.jkiss.dbeaver.ui.controls.resultset.IResultSetSelection;
 import org.jkiss.dbeaver.ui.controls.resultset.ResultSetModel;
 import org.jkiss.dbeaver.ui.controls.resultset.ResultSetRow;
 import org.jkiss.dbeaver.ui.dialogs.sql.ViewSQLDialog;
+import org.jkiss.dbeaver.ui.navigator.NavigatorUtils;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
@@ -154,7 +157,7 @@ public class GenerateSQLContributor extends CompoundContributionItem {
                     {
                         for (ResultSetRow firstRow : selectedRows) {
 
-                            Collection<? extends DBSEntityAttribute> keyAttributes = getKeyAttributes(monitor, object);
+                            Collection<DBDAttributeBinding> keyAttributes = getKeyAttributes(monitor, object);
                             sql.append("SELECT ");
                             boolean hasAttr = false;
                             for (DBSAttributeBase attr : getValueAttributes(monitor, object, keyAttributes)) {
@@ -165,15 +168,10 @@ public class GenerateSQLContributor extends CompoundContributionItem {
                             sql.append("\nFROM ").append(DBUtils.getObjectFullName(entity, DBPEvaluationContext.DML));
                             sql.append("\nWHERE ");
                             hasAttr = false;
-                            for (DBSEntityAttribute attr : keyAttributes) {
+                            for (DBDAttributeBinding binding : keyAttributes) {
                                 if (hasAttr) sql.append(" AND ");
-                                DBDAttributeBinding binding = rsv.getModel().getAttributeBinding(attr);
-                                sql.append(DBUtils.getObjectFullName(attr, DBPEvaluationContext.DML)).append("=");
-                                if (binding == null) {
-                                    appendDefaultValue(sql, attr);
-                                } else {
-                                    appendAttributeValue(rsv, sql, binding, firstRow);
-                                }
+                                sql.append(DBUtils.getObjectFullName(binding.getAttribute(), DBPEvaluationContext.DML)).append("=");
+                                appendAttributeValue(rsv, sql, binding, firstRow);
                                 hasAttr = true;
                             }
                             sql.append(";\n");
@@ -217,25 +215,58 @@ public class GenerateSQLContributor extends CompoundContributionItem {
                     }
                 }));
 
+                menu.add(makeAction("UPDATE", new ResultSetAnalysisRunner(dataContainer.getDataSource(), rsv.getModel()) {
+                    @Override
+                    public void generateSQL(DBRProgressMonitor monitor, StringBuilder sql, ResultSetModel object) throws DBException {
+                        for (ResultSetRow firstRow : selectedRows) {
+
+                            Collection<DBDAttributeBinding> keyAttributes = getKeyAttributes(monitor, object);
+                            Collection<? extends DBSAttributeBase> valueAttributes = getValueAttributes(monitor, object, keyAttributes);
+                            sql.append("UPDATE ").append(DBUtils.getObjectFullName(entity, DBPEvaluationContext.DML));
+                            sql.append("\nSET ");
+                            boolean hasAttr = false;
+                            for (DBSAttributeBase attr : valueAttributes) {
+                                if (DBUtils.isPseudoAttribute(attr) || DBUtils.isHiddenObject(attr)) {
+                                    continue;
+                                }
+                                if (hasAttr) sql.append(", ");
+                                sql.append(DBUtils.getObjectFullName(attr, DBPEvaluationContext.DML)).append("=");
+                                DBDAttributeBinding binding = rsv.getModel().getAttributeBinding(attr);
+                                if (binding == null) {
+                                    appendDefaultValue(sql, attr);
+                                } else {
+                                    appendAttributeValue(rsv, sql, binding, firstRow);
+                                }
+
+                                hasAttr = true;
+                            }
+                            sql.append("\nWHERE ");
+                            hasAttr = false;
+                            for (DBDAttributeBinding attr : keyAttributes) {
+                                if (hasAttr) sql.append(" AND ");
+                                sql.append(DBUtils.getObjectFullName(attr, DBPEvaluationContext.DML)).append("=");
+                                appendAttributeValue(rsv, sql, attr, firstRow);
+                                hasAttr = true;
+                            }
+                            sql.append(";\n");
+                        }
+                    }
+                }));
+
                 menu.add(makeAction("DELETE by Unique Key", new ResultSetAnalysisRunner(dataContainer.getDataSource(), rsv.getModel()) {
                     @Override
                     public void generateSQL(DBRProgressMonitor monitor, StringBuilder sql, ResultSetModel object) throws DBException
                     {
                         for (ResultSetRow firstRow : selectedRows) {
 
-                            Collection<? extends DBSEntityAttribute> keyAttributes = getKeyAttributes(monitor, object);
+                            Collection<DBDAttributeBinding> keyAttributes = getKeyAttributes(monitor, object);
                             sql.append("DELETE FROM ").append(DBUtils.getObjectFullName(entity, DBPEvaluationContext.DML));
                             sql.append("\nWHERE ");
                             boolean hasAttr = false;
-                            for (DBSEntityAttribute attr : keyAttributes) {
+                            for (DBDAttributeBinding binding : keyAttributes) {
                                 if (hasAttr) sql.append(" AND ");
-                                DBDAttributeBinding binding = rsv.getModel().getAttributeBinding(attr);
-                                sql.append(DBUtils.getObjectFullName(attr, DBPEvaluationContext.DML)).append("=");
-                                if (binding == null) {
-                                    appendDefaultValue(sql, attr);
-                                } else {
-                                    appendAttributeValue(rsv, sql, binding, firstRow);
-                                }
+                                sql.append(DBUtils.getObjectFullName(binding.getAttribute(), DBPEvaluationContext.DML)).append("=");
+                                appendAttributeValue(rsv, sql, binding, firstRow);
                                 hasAttr = true;
                             }
                             sql.append(";\n");
@@ -379,14 +410,26 @@ public class GenerateSQLContributor extends CompoundContributionItem {
             return object.getVisibleAttributes();
         }
 
-        protected Collection<? extends DBSEntityAttribute> getKeyAttributes(DBRProgressMonitor monitor, ResultSetModel object) throws DBException
+        protected List<DBDAttributeBinding> getKeyAttributes(DBRProgressMonitor monitor, ResultSetModel object) throws DBException
         {
-            final DBSEntity singleSource = object.getSingleSource();
-            if (singleSource == null) {
+            final DBDRowIdentifier rowIdentifier = getDefaultRowIdentifier(object);
+            if (rowIdentifier == null) {
                 return Collections.emptyList();
             }
-            return DBUtils.getBestTableIdentifier(monitor, singleSource);
+            return rowIdentifier.getAttributes();
         }
+
+        @Nullable
+        private DBDRowIdentifier getDefaultRowIdentifier(ResultSetModel object) {
+            for (DBDAttributeBinding attr : object.getAttributes()) {
+                DBDRowIdentifier rowIdentifier = attr.getRowIdentifier();
+                if (rowIdentifier != null) {
+                    return rowIdentifier;
+                }
+            }
+            return null;
+        }
+
     }
 
     private static ContributionItem makeAction(String text, final DBRRunnableWithResult<String> runnable)
@@ -401,7 +444,8 @@ public class GenerateSQLContributor extends CompoundContributionItem {
                     if (sql == null) {
                         return;
                     }
-                    IEditorPart activeEditor = DBeaverUI.getActiveWorkbenchWindow().getActivePage().getActiveEditor();
+                    IWorkbenchPage activePage = DBeaverUI.getActiveWorkbenchWindow().getActivePage();
+                    IEditorPart activeEditor = activePage.getActiveEditor();
                     boolean showDialog = true;
 /*
                     if (activeEditor instanceof AbstractTextEditor) {
@@ -421,17 +465,31 @@ public class GenerateSQLContributor extends CompoundContributionItem {
                         showDialog = false;
                     }
 */
-                    if (showDialog) {
-                        DBPDataSource dataSource = activeEditor instanceof DBPContextProvider ? ((DBPContextProvider) activeEditor).getExecutionContext().getDataSource() : null;
-                        if (dataSource != null) {
-                            ViewSQLDialog dialog = new ViewSQLDialog(
-                                DBeaverUI.getActiveWorkbenchWindow().getActivePage().getActivePart().getSite(),
-                                dataSource.getDefaultContext(false),
-                                "Generated SQL",
-                                null,
-                                sql.toString());
-                            dialog.open();
+                    DBPDataSource dataSource = null;
+                    if (activeEditor instanceof DBPContextProvider) {
+                        DBCExecutionContext context = ((DBPContextProvider) activeEditor).getExecutionContext();
+                        if (context != null) {
+                            dataSource = context.getDataSource();
                         }
+                    }
+                    if (dataSource == null) {
+                        IWorkbenchPart activePart = activePage.getActivePart();
+                        if (activePart != null) {
+                            DBNNode selectedNode = NavigatorUtils.getSelectedNode(activePart.getSite().getSelectionProvider());
+                            if (selectedNode instanceof DBNDatabaseNode) {
+                                dataSource = ((DBNDatabaseNode) selectedNode).getDataSource();
+                            }
+                        }
+                    }
+
+                    if (showDialog && dataSource != null) {
+                        ViewSQLDialog dialog = new ViewSQLDialog(
+                            activePage.getActivePart().getSite(),
+                            dataSource.getDefaultContext(false),
+                            "Generated SQL (" + dataSource.getContainer().getName() + ")",
+                            null,
+                            sql.toString());
+                        dialog.open();
                     } else {
                         UIUtils.setClipboardContents(DBeaverUI.getActiveWorkbenchShell().getDisplay(), TextTransfer.getInstance(), sql);
                     }

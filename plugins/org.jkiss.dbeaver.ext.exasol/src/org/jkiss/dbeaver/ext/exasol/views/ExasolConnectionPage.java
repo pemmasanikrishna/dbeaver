@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016-2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.views;
 
@@ -46,6 +45,9 @@ import org.jkiss.utils.CommonUtils;
 import java.util.Locale;
 
 public class ExasolConnectionPage extends ConnectionPageAbstract implements ICompositeDialogPage {
+
+    private Label backupHostLabel;
+
     public ExasolConnectionPage() {
     }
 
@@ -94,7 +96,7 @@ public class ExasolConnectionPage extends ConnectionPageAbstract implements ICom
             hostText.setLayoutData(gd);
             hostText.addModifyListener(textListener);
 
-            final Label backupHostLabel = UIUtils.createControlLabel(addrGroup, "Backup Host List");
+            backupHostLabel = UIUtils.createControlLabel(addrGroup, "Backup Host List");
             gd = new GridData(GridData.HORIZONTAL_ALIGN_END);
             backupHostLabel.setLayoutData(gd);
             backupHostLabel.setEnabled(showBackupHosts);
@@ -104,7 +106,6 @@ public class ExasolConnectionPage extends ConnectionPageAbstract implements ICom
             gd.grabExcessHorizontalSpace = true;
             backupHostText.setLayoutData(gd);
             backupHostText.addModifyListener(textListener);
-            backupHostText.setEnabled(showBackupHosts);
 
 
             useBackupHostList = UIUtils.createLabelCheckbox(addrGroup, "Use Backup Host List", showBackupHosts);
@@ -117,7 +118,7 @@ public class ExasolConnectionPage extends ConnectionPageAbstract implements ICom
 
                     //reset text if disabled
                     if (!useBackupHostList.getSelection())
-                        backupHostText.setText(null);
+                        backupHostText.setText("");
                 }
             });
 
@@ -203,19 +204,23 @@ public class ExasolConnectionPage extends ConnectionPageAbstract implements ICom
             passwordText.setText(CommonUtils.notEmpty(connectionInfo.getUserPassword()));
         }
 
-        Object backupHostText = connectionInfo.getProviderProperty(ExasolConstants.DRV_BACKUP_HOST_LIST);
+        String backupHostText = connectionInfo.getProviderProperty(ExasolConstants.DRV_BACKUP_HOST_LIST);
 
-        if (backupHostText != null) {
-            this.backupHostText.setText(backupHostText.toString());
-            this.useBackupHostList.setEnabled(true);
+        if (!CommonUtils.isEmpty(backupHostText)) {
+            this.backupHostLabel.setEnabled(true);
+            this.backupHostText.setText(backupHostText);
             this.backupHostText.setEnabled(true);
             this.useBackupHostList.setSelection(true);
+        } else {
+            this.backupHostLabel.setEnabled(false);
+            this.backupHostText.setEnabled(false);
+            this.useBackupHostList.setSelection(false);
         }
 
-        Object encryptComm = connectionInfo.getProviderProperty(ExasolConstants.DRV_ENCRYPT);
+        String encryptComm = connectionInfo.getProviderProperty(ExasolConstants.DRV_ENCRYPT);
 
         if (encryptComm != null) {
-            if (encryptComm.toString().equals("1"))
+            if (encryptComm.equals("1"))
                 this.encryptCommunication.setEnabled(true);
         }
 
@@ -240,9 +245,7 @@ public class ExasolConnectionPage extends ConnectionPageAbstract implements ICom
             connectionInfo.setClientHomeId(homesSelector.getSelectedHome());
         }
 
-        if (backupHostText.getText() != null) {
-            connectionInfo.setProviderProperty(ExasolConstants.DRV_BACKUP_HOST_LIST, backupHostText.getText());
-        }
+        connectionInfo.setProviderProperty(ExasolConstants.DRV_BACKUP_HOST_LIST, backupHostText.getText());
         if (this.encryptCommunication.getSelection())
             connectionInfo.setProviderProperty(ExasolConstants.DRV_ENCRYPT, "1");
 

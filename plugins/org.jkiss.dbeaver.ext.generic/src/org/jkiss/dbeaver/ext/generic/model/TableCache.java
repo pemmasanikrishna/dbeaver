@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.generic.model;
 
@@ -62,9 +61,9 @@ public class TableCache extends JDBCStructLookupCache<GenericStructContainer, Ge
         INVALID_TABLE_TYPES.add("TRIGGER");
     }
 
-    private final GenericDataSource dataSource;
-    private final GenericMetaObject tableObject;
-    private final GenericMetaObject columnObject;
+    final GenericDataSource dataSource;
+    final GenericMetaObject tableObject;
+    final GenericMetaObject columnObject;
 
     TableCache(GenericDataSource dataSource)
     {
@@ -97,49 +96,30 @@ public class TableCache extends JDBCStructLookupCache<GenericStructContainer, Ge
     {
         String tableName = GenericUtils.safeGetStringTrimmed(tableObject, dbResult, JDBCConstants.TABLE_NAME);
         String tableType = GenericUtils.safeGetStringTrimmed(tableObject, dbResult, JDBCConstants.TABLE_TYPE);
-        String remarks = GenericUtils.safeGetString(tableObject, dbResult, JDBCConstants.REMARKS);
 
         if (CommonUtils.isEmpty(tableName)) {
             log.debug("Empty table name" + (owner == null ? "" : " in container " + owner.getName()));
             return null;
         }
 
+        if (CommonUtils.isEmpty(tableName)) {
+            return null;
+        }
         if (tableType != null && INVALID_TABLE_TYPES.contains(tableType)) {
             // Bad table type. Just skip it
             return null;
         }
-
-        boolean isSystemTable = tableType != null && tableType.toUpperCase().contains("SYSTEM");
-        if (isSystemTable && !owner.getDataSource().getContainer().isShowSystemObjects()) {
-            return null;
-        }
-
-        // Skip "recycled" tables (Oracle)
-        if (CommonUtils.isEmpty(tableName) || tableName.startsWith("BIN$")) {
-            return null;
-        }
-/*
-        // Do not read table type object
-        // Actually dunno what to do with it and it often throws stupid warnings in debug
-
-        String typeName = GenericUtils.safeGetString(dbResult, JDBCConstants.TYPE_NAME);
-        String typeCatalogName = GenericUtils.safeGetString(dbResult, JDBCConstants.TYPE_CAT);
-        String typeSchemaName = GenericUtils.safeGetString(dbResult, JDBCConstants.TYPE_SCHEM);
-        GenericCatalog typeCatalog = CommonUtils.isEmpty(typeCatalogName) ?
-            null :
-            getDataSourceContainer().getCatalog(context.getProgressMonitor(), typeCatalogName);
-        GenericSchema typeSchema = CommonUtils.isEmpty(typeSchemaName) ?
-            null :
-            typeCatalog == null ?
-                getDataSourceContainer().getSchema(context.getProgressMonitor(), typeSchemaName) :
-                typeCatalog.getSchema(typeSchemaName);
-*/
-        return new GenericTable(
+        GenericTable table = getDataSource().getMetaModel().createTableImpl(
             owner,
             tableName,
             tableType,
-            remarks,
-            true);
+            dbResult);
+
+        boolean isSystemTable = table.isSystem();
+        if (isSystemTable && !owner.getDataSource().getContainer().isShowSystemObjects()) {
+            return null;
+        }
+        return table;
     }
 
     @Override
@@ -174,11 +154,15 @@ public class TableCache extends JDBCStructLookupCache<GenericStructContainer, Ge
         long charLength = GenericUtils.safeGetLong(columnObject, dbResult, JDBCConstants.CHAR_OCTET_LENGTH);
         int ordinalPos = GenericUtils.safeGetInt(columnObject, dbResult, JDBCConstants.ORDINAL_POSITION);
         boolean autoIncrement = "YES".equals(GenericUtils.safeGetStringTrimmed(columnObject, dbResult, JDBCConstants.IS_AUTOINCREMENT));
-        boolean autoGenerated = "YES".equals(GenericUtils.safeGetStringTrimmed(columnObject, dbResult, JDBCConstants.IS_AUTOINCREMENT));
+        boolean autoGenerated = "YES".equals(GenericUtils.safeGetStringTrimmed(columnObject, dbResult, JDBCConstants.IS_GENERATEDCOLUMN));
         // Check for identity modifier [DBSPEC: MS SQL]
         if (typeName.toUpperCase(Locale.ENGLISH).endsWith(GenericConstants.TYPE_MODIFIER_IDENTITY)) {
             autoIncrement = true;
             typeName = typeName.substring(0, typeName.length() - GenericConstants.TYPE_MODIFIER_IDENTITY.length());
+        }
+        // Check for empty modifiers [MS SQL]
+        if (typeName.endsWith("()")) {
+            typeName = typeName.substring(0, typeName.length() - 2);
         }
 
         {

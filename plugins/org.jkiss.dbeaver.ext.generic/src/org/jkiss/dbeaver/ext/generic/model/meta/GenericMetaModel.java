@@ -1,23 +1,21 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.generic.model.meta;
 
-import org.eclipse.core.runtime.IConfigurationElement;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
@@ -36,8 +34,6 @@ import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCBasicDataTypeCache;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.rdb.DBSIndexType;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureType;
-import org.jkiss.dbeaver.registry.RegistryConstants;
-import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.DatabaseMetaData;
@@ -50,55 +46,18 @@ import java.util.*;
 public class GenericMetaModel {
 
     private static final Log log = Log.getLog(GenericMetaModel.class);
+    GenericMetaModelDescriptor descriptor;
 
-    private String id;
-    private final Map<String, GenericMetaObject> objects = new HashMap<>();
-    private String[] driverClass;
-
-    public GenericMetaModel(IConfigurationElement cfg)
+    public GenericMetaModel()
     {
-        this.id = cfg.getAttribute(RegistryConstants.ATTR_ID);
-        IConfigurationElement[] objectList = cfg.getChildren("object");
-        if (!ArrayUtils.isEmpty(objectList)) {
-            for (IConfigurationElement childConfig : objectList) {
-                GenericMetaObject metaObject = new GenericMetaObject(childConfig);
-                objects.put(metaObject.getType(), metaObject);
-            }
-        }
-        String driverClassList = cfg.getAttribute("driverClass");
-        if (CommonUtils.isEmpty(driverClassList)) {
-            this.driverClass = new String[0];
-        } else {
-            this.driverClass = driverClassList.split(",");
-        }
     }
 
-    public GenericMetaModel(String id, String[] driverClass) {
-        this.id = id;
-        this.driverClass = driverClass;
-    }
-
-    public GenericMetaModel(String id) {
-        this.id = id;
+    public GenericMetaObject getMetaObject(String id) {
+        return descriptor == null ? null : descriptor.getObject(id);
     }
 
     public GenericDataSource createDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException {
-        return new GenericDataSource(monitor, container, this);
-    }
-
-    public String getId()
-    {
-        return id;
-    }
-
-    @NotNull
-    public String[] getDriverClass() {
-        return driverClass;
-    }
-
-    public GenericMetaObject getObject(String id)
-    {
-        return objects.get(id);
+        return new GenericDataSource(monitor, container, this, new GenericSQLDialect());
     }
 
     public void loadProcedures(DBRProgressMonitor monitor, @NotNull GenericObjectContainer container)
@@ -235,7 +194,7 @@ public class GenericMetaModel {
         }
     }
 
-    protected GenericProcedure createProcedureImpl(
+    public GenericProcedure createProcedureImpl(
         GenericStructContainer container,
         String procedureName,
         String specificName,
@@ -304,6 +263,19 @@ public class GenericMetaModel {
         return false;
     }
 
+    public GenericTable createTableImpl(
+        GenericStructContainer container,
+        @Nullable String tableName,
+        @Nullable String tableType,
+        @Nullable JDBCResultSet dbResult)
+    {
+        return new GenericTable(
+            container,
+            tableName,
+            tableType,
+            dbResult);
+    }
+
     public GenericTableIndex createIndexImpl(
         GenericTable table,
         boolean nonUnique,
@@ -334,4 +306,14 @@ public class GenericMetaModel {
     public boolean useCatalogInObjectNames() {
         return true;
     }
+
+    public boolean isSystemTable(GenericTable table) {
+        final String tableType = table.getTableType().toUpperCase(Locale.ENGLISH);
+        return tableType.contains("SYSTEM");
+    }
+
+    public boolean isView(GenericTable table) {
+        return table.getTableType().toUpperCase(Locale.ENGLISH).contains("VIEW");
+    }
+
 }

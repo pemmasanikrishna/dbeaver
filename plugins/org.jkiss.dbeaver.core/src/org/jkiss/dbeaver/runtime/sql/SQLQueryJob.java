@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.runtime.sql;
 
@@ -38,11 +37,10 @@ import org.jkiss.dbeaver.model.impl.AbstractExecutionSource;
 import org.jkiss.dbeaver.model.impl.local.StatResultSet;
 import org.jkiss.dbeaver.model.qm.QMUtils;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.sql.SQLDataSource;
-import org.jkiss.dbeaver.model.sql.SQLQuery;
-import org.jkiss.dbeaver.model.sql.SQLQueryParameter;
-import org.jkiss.dbeaver.model.sql.SQLQueryResult;
+import org.jkiss.dbeaver.model.sql.*;
 import org.jkiss.dbeaver.model.struct.DBSDataContainer;
+import org.jkiss.dbeaver.registry.sql.SQLCommandHandlerDescriptor;
+import org.jkiss.dbeaver.registry.sql.SQLCommandsRegistry;
 import org.jkiss.dbeaver.runtime.jobs.DataSourceJob;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIConfirmation;
@@ -56,6 +54,7 @@ import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SQLQueryJob
@@ -69,7 +68,8 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
     public static final Object STATS_RESULTS = new Object();
 
     private final DBSDataContainer dataContainer;
-    private final List<SQLQuery> queries;
+    private final List<SQLScriptElement> queries;
+    private final SQLScriptContext scriptContext;
     private final SQLResultsConsumer resultsConsumer;
     private final SQLQueryListener listener;
     private final IWorkbenchPartSite partSite;
@@ -97,7 +97,8 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
         @NotNull String name,
         @NotNull DBCExecutionContext executionContext,
         @NotNull DBSDataContainer dataContainer,
-        @NotNull List<SQLQuery> queries,
+        @NotNull List<SQLScriptElement> queries,
+        @NotNull SQLScriptContext scriptContext,
         @NotNull SQLResultsConsumer resultsConsumer,
         @Nullable SQLQueryListener listener)
     {
@@ -105,6 +106,7 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
         this.dataContainer = dataContainer;
         this.partSite = partSite;
         this.queries = queries;
+        this.scriptContext = scriptContext;
         this.resultsConsumer = resultsConsumer;
         this.listener = listener;
 
@@ -123,12 +125,12 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
         this.fetchResultSets = fetchResultSets;
     }
 
-    public SQLQuery getLastQuery()
+    public SQLScriptElement getLastQuery()
     {
         return queries.isEmpty() ? null : queries.get(0);
     }
 
-    public SQLQuery getLastGoodQuery() {
+    public SQLScriptElement getLastGoodQuery() {
         return lastGoodQuery;
     }
 
@@ -176,7 +178,7 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
                 resultSetNumber = 0;
                 for (int queryNum = 0; queryNum < queries.size(); ) {
                     // Execute query
-                    SQLQuery query = queries.get(queryNum);
+                    SQLScriptElement query = queries.get(queryNum);
 
                     fetchResultSetNumber = resultSetNumber;
                     boolean runNext = executeSingleQuery(session, query, true);
@@ -270,8 +272,20 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
         }
     }
 
-    private boolean executeSingleQuery(@NotNull DBCSession session, @NotNull SQLQuery sqlQuery, final boolean fireEvents)
+    private boolean executeSingleQuery(@NotNull DBCSession session, @NotNull SQLScriptElement element, final boolean fireEvents)
     {
+        if (element instanceof SQLControlCommand) {
+            try {
+                return executeControlCommand((SQLControlCommand)element);
+            } catch (Throwable e) {
+                if (!(e instanceof DBException)) {
+                    log.error("Unexpected error while processing SQL command", e);
+                }
+                lastError = e;
+                return false;
+            }
+        }
+        SQLQuery sqlQuery = (SQLQuery) element;
         lastError = null;
 
         final DBCExecutionContext executionContext = getExecutionContext();
@@ -288,8 +302,8 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
         // Modify query (filters + parameters)
         if (dataFilter != null && dataFilter.hasFilters() && dataSource instanceof SQLDataSource) {
             String filteredQueryText = ((SQLDataSource) dataSource).getSQLDialect().addFiltersToQuery(
-                dataSource, originalQuery.getQuery(), dataFilter);
-            sqlQuery = new SQLQuery(filteredQueryText, sqlQuery);
+                dataSource, originalQuery.getText(), dataFilter);
+            sqlQuery = new SQLQuery(executionContext.getDataSource(), filteredQueryText, sqlQuery);
         }
 
         final SQLQueryResult curResult = new SQLQueryResult(sqlQuery);
@@ -303,11 +317,11 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
 
             // Check and invalidate connection
             if (!connectionInvalidated && dataSource.getContainer().getPreferenceStore().getBoolean(DBeaverPreferences.STATEMENT_INVALIDATE_BEFORE_EXECUTE)) {
-                executionContext.invalidateContext(session.getProgressMonitor());
+                executionContext.invalidateContext(session.getProgressMonitor(), true);
                 connectionInvalidated = true;
             }
 
-            statistics.setQueryText(originalQuery.getQuery());
+            statistics.setQueryText(originalQuery.getText());
 
             // Notify query start
             if (fireEvents && listener != null) {
@@ -429,11 +443,22 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
         return true;
     }
 
+    private boolean executeControlCommand(SQLControlCommand command) throws DBException {
+        if (command.isEmptyCommand()) {
+            return true;
+        }
+        SQLCommandHandlerDescriptor commandHandler = SQLCommandsRegistry.getInstance().getCommandHandler(command.getCommand());
+        if (commandHandler == null) {
+            throw new DBException("Command '" + command.getCommand() + "' not supported");
+        }
+        return commandHandler.createHandler().handleCommand(command, scriptContext);
+    }
+
     private void showExecutionResult(DBCSession session) {
         if (statistics.getStatementsCount() > 1 || resultSetNumber == 0) {
-            SQLQuery query = new SQLQuery("", -1, -1);
+            SQLQuery query = new SQLQuery(session.getDataSource(), "", -1, -1);
             if (queries.size() == 1) {
-                query.setQuery(queries.get(0).getQuery());
+                query.setText(queries.get(0).getText());
             }
             query.setData(STATS_RESULTS); // It will set tab name to "Stats"
             DBDDataReceiver dataReceiver = resultsConsumer.getDataReceiver(query, resultSetNumber);
@@ -475,7 +500,7 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
                 fakeResultSet.addColumn("Query", DBPDataKind.STRING);
                 fakeResultSet.addColumn("Updated Rows", DBPDataKind.NUMERIC);
                 fakeResultSet.addColumn("Finish time", DBPDataKind.DATETIME);
-                fakeResultSet.addRow(query.getQuery(), updateCount, new Date());
+                fakeResultSet.addRow(query.getText(), updateCount, new Date());
             } else {
                 fakeResultSet.addColumn("Result", DBPDataKind.NUMERIC);
             }
@@ -497,36 +522,57 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
 
         // Set values for all parameters
         // Replace parameter tokens with parameter values
-        String query = sqlStatement.getQuery();
+        String query = sqlStatement.getText();
         for (int i = parameters.size(); i > 0; i--) {
             SQLQueryParameter parameter = parameters.get(i - 1);
             query = query.substring(0, parameter.getTokenOffset()) + parameter.getValue() + query.substring(parameter.getTokenOffset() + parameter.getTokenLength());
         }
-        sqlStatement.setQuery(query);
+        sqlStatement.setText(query);
         return true;
     }
 
     private boolean fillStatementParameters(final List<SQLQueryParameter> parameters)
     {
         boolean allSet = true;
+        Map<String, Object> scriptVariables = scriptContext.getVariables();
         for (SQLQueryParameter param : parameters) {
             if (param.getValue() == null) {
                 allSet = false;
-                break;
+            }
+            String paramName = param.getTitle();
+            if (scriptVariables.containsKey(paramName)) {
+                Object varValue = scriptVariables.get(paramName);
+                String strValue;
+                if (varValue instanceof String) {
+                    strValue = SQLUtils.quoteString((String) varValue);
+                } else {
+                    strValue = varValue == null ? null : varValue.toString();
+                }
+                param.setValue(strValue);
             }
         }
         if (allSet) {
             return true;
         }
-        return new UIConfirmation() {
+        boolean okPressed = new UIConfirmation() {
             @Override
             public Boolean runTask() {
                 SQLQueryParameterBindDialog dialog = new SQLQueryParameterBindDialog(
-                    partSite.getShell(),
-                    parameters);
+                        partSite.getShell(),
+                        parameters);
                 return (dialog.open() == IDialogConstants.OK_ID);
             }
         }.execute();
+        if (okPressed) {
+            // Save values back to script context
+            for (SQLQueryParameter param : parameters) {
+                if (param.isNamed() && scriptVariables.containsKey(param.getTitle())) {
+                    String strValue = param.getValue();
+                    scriptVariables.put(param.getTitle(), SQLUtils.unQuoteString(strValue));
+                }
+            }
+        }
+        return okPressed;
     }
 
     private boolean fetchQueryData(DBCSession session, DBCResultSet resultSet, SQLQueryResult result, DBDDataReceiver dataReceiver, boolean updateStatistics)
@@ -683,27 +729,15 @@ public class SQLQueryJob extends DataSourceJob implements Closeable
     }
 */
 
-    public void extractData(DBCSession session, SQLQuery query, int resultNumber)
+    public void extractData(@NotNull DBCSession session, @NotNull SQLScriptElement query, int resultNumber)
         throws DBCException
     {
-        // There are two possibilities:
-        // We are in single query mode or
-        // we are in refresh of one of script queries
-        if (queries.isEmpty()) {
-            throw new DBCException("No queries to run");
-        } else if (queries.size() == 1) {
-            // Single query mode = use the one from query list
-            query = queries.get(0);
-        } else {
-            // Script mode
-            //query.getOriginalQuery();
-        }
         // Reset query to original. Otherwise multiple filters will corrupt it
         query.reset();
 
         statistics = new DBCStatistics();
         resultSetNumber = resultNumber;
-        session.getProgressMonitor().beginTask(CommonUtils.truncateString(query.getQuery(), 512), 1);
+        session.getProgressMonitor().beginTask(CommonUtils.truncateString(query.getText(), 512), 1);
         try {
             boolean result = executeSingleQuery(session, query, true);
             if (!result && lastError != null) {

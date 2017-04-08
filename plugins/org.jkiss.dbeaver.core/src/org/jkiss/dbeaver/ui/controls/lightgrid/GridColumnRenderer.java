@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.controls.lightgrid;
@@ -24,6 +23,7 @@ import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.TextUtils;
 import org.jkiss.dbeaver.ui.UIIcon;
+import org.jkiss.utils.CommonUtils;
 
 /**
  * Grid column renderer
@@ -59,7 +59,12 @@ class GridColumnRenderer extends AbstractRenderer
     {
         return grid.getLabelProvider().getText(element);
     }
-    
+
+    protected String getColumnDescription(Object element)
+    {
+        return grid.getLabelProvider().getDescription(element);
+    }
+
     protected Font getColumnFont(Object element) {
         Font font = grid.getLabelProvider().getFont(element);
         return font != null ? font : grid.normalFont;
@@ -116,15 +121,15 @@ class GridColumnRenderer extends AbstractRenderer
 
         int y = bounds.y + TOP_MARGIN;
 
-        String text = getColumnText(element);
-
-        text = TextUtils.getShortString(grid.fontMetrics, text, width);
-
-        gc.drawString(text, bounds.x + x + pushedDrawingOffset, y + pushedDrawingOffset, true);
+        {
+            // Column name
+            String text = getColumnText(element);
+            text = TextUtils.getShortString(grid.fontMetrics, text, width);
+            gc.setFont(grid.normalFont);
+            gc.drawString(text, bounds.x + x + pushedDrawingOffset, y + pushedDrawingOffset, true);
+        }
 
         if (sortOrder != SWT.NONE) {
-            y = bounds.y + TOP_MARGIN;
-
             if (drawSelected) {
                 sortBounds.x = bounds.x + bounds.width - ARROW_MARGIN - sortBounds.width + 1;
                 sortBounds.y = y;
@@ -135,6 +140,18 @@ class GridColumnRenderer extends AbstractRenderer
             paintSort(gc, sortBounds, sortOrder);
         }
 
+        {
+            // Draw column description
+            String text = getColumnDescription(element);
+            if (!CommonUtils.isEmpty(text)) {
+                y += TOP_MARGIN + grid.fontMetrics.getHeight();
+                text = TextUtils.getShortString(grid.fontMetrics, text, width);
+                gc.setFont(grid.normalFont);
+                gc.drawString(text, bounds.x + x + pushedDrawingOffset, y + pushedDrawingOffset, true);
+            }
+        }
+
+        // Draw border
         if (!flat) {
 
             if (drawSelected) {

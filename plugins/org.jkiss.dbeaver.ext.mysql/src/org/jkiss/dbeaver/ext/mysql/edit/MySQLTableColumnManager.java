@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.mysql.edit;
 
@@ -28,12 +27,14 @@ import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.edit.DBEObjectRenamer;
+import org.jkiss.dbeaver.model.edit.DBEObjectReorderer;
 import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.model.impl.DBSObjectCache;
 import org.jkiss.dbeaver.model.impl.edit.DBECommandAbstract;
 import org.jkiss.dbeaver.model.impl.edit.SQLDatabasePersistAction;
 import org.jkiss.dbeaver.model.impl.sql.edit.struct.SQLTableColumnManager;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.DBSDataType;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.ui.UITask;
@@ -47,12 +48,32 @@ import java.util.Locale;
 /**
  * MySQL table column manager
  */
-public class MySQLTableColumnManager extends SQLTableColumnManager<MySQLTableColumn, MySQLTableBase> implements DBEObjectRenamer<MySQLTableColumn>  {
+public class MySQLTableColumnManager extends SQLTableColumnManager<MySQLTableColumn, MySQLTableBase>
+    implements DBEObjectRenamer<MySQLTableColumn>, DBEObjectReorderer<MySQLTableColumn>
+{
 
     protected final ColumnModifier<MySQLTableColumn> MySQLDataTypeModifier = new ColumnModifier<MySQLTableColumn>() {
         @Override
         public void appendModifier(MySQLTableColumn column, StringBuilder sql, DBECommandAbstract<MySQLTableColumn> command) {
             sql.append(' ').append(column.getFullTypeName());
+        }
+    };
+
+    protected final ColumnModifier<MySQLTableColumn> CharsetModifier = new ColumnModifier<MySQLTableColumn>() {
+        @Override
+        public void appendModifier(MySQLTableColumn column, StringBuilder sql, DBECommandAbstract<MySQLTableColumn> command) {
+            if (column.getCharset() != null) {
+                sql.append(" CHARACTER SET ").append(column.getCharset().getName());
+            }
+        }
+    };
+
+    protected final ColumnModifier<MySQLTableColumn> CollationModifier = new ColumnModifier<MySQLTableColumn>() {
+        @Override
+        public void appendModifier(MySQLTableColumn column, StringBuilder sql, DBECommandAbstract<MySQLTableColumn> command) {
+            if (column.getCollation() != null) {
+                sql.append(" COLLATE ").append(column.getCollation().getName());
+            }
         }
     };
 
@@ -63,9 +84,9 @@ public class MySQLTableColumnManager extends SQLTableColumnManager<MySQLTableCol
         return object.getParentObject().getContainer().getTableCache().getChildrenCache(object.getParentObject());
     }
 
-    protected ColumnModifier[] getSupportedModifiers()
+    protected ColumnModifier[] getSupportedModifiers(MySQLTableColumn column)
     {
-        return new ColumnModifier[] {MySQLDataTypeModifier, DefaultModifier, NullNotNullModifier};
+        return new ColumnModifier[] {MySQLDataTypeModifier, CharsetModifier, CollationModifier, DefaultModifier, NullNotNullModifier};
     }
 
     @Override
@@ -82,13 +103,9 @@ public class MySQLTableColumnManager extends SQLTableColumnManager<MySQLTableCol
             decl.append(" AUTO_INCREMENT"); //$NON-NLS-1$
         }
         if (!CommonUtils.isEmpty(column.getComment())) {
-            decl.append(" COMMENT '").append(escapeComment(column.getComment())).append("'"); //$NON-NLS-1$ //$NON-NLS-2$
+            decl.append(" COMMENT ").append(SQLUtils.quoteString(column.getComment())); //$NON-NLS-1$ //$NON-NLS-2$
         }
         return decl;
-    }
-
-    private String escapeComment(String comment) {
-        return comment.replace("'", "\\'");
     }
 
     @Override
@@ -105,7 +122,7 @@ public class MySQLTableColumnManager extends SQLTableColumnManager<MySQLTableCol
                 column.setTypeName(typeName); //$NON-NLS-1$
                 column.setMaxLength(columnType != null && columnType.getDataKind() == DBPDataKind.STRING ? 100 : 0);
                 column.setValueType(columnType == null ? Types.INTEGER : columnType.getTypeID());
-                column.setOrdinalPosition(-1);
+                column.setOrdinalPosition(parent.getCachedAttributes().size() + 1);
                 column.setFullTypeName(DBUtils.getFullTypeName(column));
                 AttributeEditPage page = new AttributeEditPage(null, column);
                 if (!page.edit()) {
@@ -145,4 +162,41 @@ public class MySQLTableColumnManager extends SQLTableColumnManager<MySQLTableCol
                     getNestedDeclaration(column.getTable(), command)));
     }
 
+    @Override
+    protected void addObjectReorderActions(List<DBEPersistAction> actions, ObjectReorderCommand command) {
+        final MySQLTableColumn column = command.getObject();
+        String order = "FIRST";
+        if (column.getOrdinalPosition() > 0) {
+            for (MySQLTableColumn col : command.getObject().getTable().getCachedAttributes()) {
+                if (col.getOrdinalPosition() == column.getOrdinalPosition() - 1) {
+                    order = "AFTER " + DBUtils.getQuotedIdentifier(col);
+                    break;
+                }
+            }
+        }
+        actions.add(
+            new SQLDatabasePersistAction(
+                "Reorder column",
+                "ALTER TABLE " + column.getTable().getFullyQualifiedName(DBPEvaluationContext.DDL) + " CHANGE " +
+                    DBUtils.getQuotedIdentifier(command.getObject()) + " " +
+                    getNestedDeclaration(column.getTable(), command) + " " + order));
+    }
+
+    ///////////////////////////////////////////////
+    // Reorder
+
+    @Override
+    public int getMinimumOrdinalPosition(MySQLTableColumn object) {
+        return 1;
+    }
+
+    @Override
+    public int getMaximumOrdinalPosition(MySQLTableColumn object) {
+        return object.getTable().getCachedAttributes().size();
+    }
+
+    @Override
+    public void setObjectOrdinalPosition(DBECommandContext commandContext, MySQLTableColumn object, List<MySQLTableColumn> siblingObjects, int newPosition) throws DBException {
+        processObjectReorder(commandContext, object, siblingObjects, newPosition);
+    }
 }

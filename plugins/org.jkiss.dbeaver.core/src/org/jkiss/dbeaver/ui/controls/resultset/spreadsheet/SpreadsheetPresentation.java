@@ -1,36 +1,34 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.controls.resultset.spreadsheet;
@@ -42,6 +40,7 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IMenuManager;
 import org.eclipse.jface.dialogs.IDialogConstants;
+import org.eclipse.jface.resource.ColorRegistry;
 import org.eclipse.jface.text.IFindReplaceTarget;
 import org.eclipse.jface.util.IPropertyChangeListener;
 import org.eclipse.jface.util.PropertyChangeEvent;
@@ -403,6 +402,7 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
         }
 
         List<GridCell> selectedCells = spreadsheet.getCellSelection();
+        boolean quoteCells = settings.isQuoteCells() && selectedCells.size() > 1;
 
         GridCell prevCell = null;
         for (GridCell cell : selectedCells) {
@@ -438,6 +438,11 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
                 column.getAttribute(),
                 value,
                 settings.getFormat());
+            if (quoteCells && cellText != null) {
+                if (cellText.contains(columnDelimiter) || cellText.contains(rowDelimiter)) {
+                    cellText = '"' + cellText + '"';
+                }
+            }
             tdt.append(cellText);
 
             if (settings.isCut()) {
@@ -451,7 +456,7 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
             prevCell = cell;
         }
         if (settings.isCut()) {
-            controller.redrawData(false);
+            controller.redrawData(false, false);
             controller.updatePanelsContent(false);
         }
 
@@ -476,14 +481,24 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
                 }
                 GridPos focusPos = spreadsheet.getFocusPos();
                 int rowNum = focusPos.row;
-                if (rowNum < 0 || rowNum >= spreadsheet.getItemCount()) {
+                if (rowNum < 0) {
                     return;
                 }
                 try (DBCSession session = DBUtils.openUtilSession(VoidProgressMonitor.INSTANCE, dataSource, "Advanced paste")) {
-                    for (String line : strValue.split("\n")) {
+
+                    String[][] newLines = parseGridLines(strValue);
+                    // Create new rows on demand
+                    while (rowNum + newLines.length > spreadsheet.getItemCount()) {
+                        controller.addNewRow(false, true);
+                    }
+                    if (rowNum < 0 || rowNum >= spreadsheet.getItemCount()) {
+                        return;
+                    }
+
+                    for (String[] line : newLines) {
                         int colNum = focusPos.col;
                         Object rowElement = spreadsheet.getRowElement(rowNum);
-                        for (String value : line.split("\t")) {
+                        for (String value : line) {
                             if (colNum >= spreadsheet.getColumnCount()) {
                                 break;
                             }
@@ -506,6 +521,7 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
                         }
                         rowNum++;
                         if (rowNum >= spreadsheet.getItemCount()) {
+                            // Shouldn't be here
                             break;
                         }
                     }
@@ -537,6 +553,80 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
         catch (Exception e) {
             UIUtils.showErrorDialog(spreadsheet.getShell(), "Cannot replace cell value", null, e);
         }
+    }
+
+    private String[][] parseGridLines(String strValue) {
+        final char columnDelimiter = '\t';
+        final char rowDelimiter = '\n';
+        final char trashDelimiter = '\r';
+        final char quote = '"';
+
+        final List<String[]> lines = new ArrayList<>();
+
+        final StringBuilder cellValue = new StringBuilder();
+        final List<String> curLine = new ArrayList<>();
+        boolean inQuote = false;
+        int length = strValue.length();
+        for (int i = 0; i < length; i++) {
+            char c = strValue.charAt(i);
+            if (inQuote && c != quote) {
+                cellValue.append(c);
+            } else {
+                switch (c) {
+                    case columnDelimiter:
+                        curLine.add(cellValue.toString());
+                        cellValue.setLength(0);
+                        break;
+                    case rowDelimiter:
+                        curLine.add(cellValue.toString());
+                        lines.add(curLine.toArray(new String[curLine.size()]));
+                        curLine.clear();
+                        cellValue.setLength(0);
+                        break;
+                    case trashDelimiter:
+                        // Ignore
+                        continue;
+                    case quote:
+                        if (inQuote) {
+                            if (i == length - 1 ||
+                                strValue.charAt(i + 1) == columnDelimiter ||
+                                strValue.charAt(i + 1) == trashDelimiter ||
+                                strValue.charAt(i + 1) == rowDelimiter)
+                            {
+                                inQuote = false;
+                                continue;
+                            }
+                        } else if (cellValue.length() == 0) {
+                            // Search for end quote
+                            for (int k = i + 1; k < length; k++) {
+                                if (strValue.charAt(k) == quote &&
+                                    (k == length - 1 ||
+                                    strValue.charAt(k + 1) == columnDelimiter ||
+                                    strValue.charAt(k + 1) == trashDelimiter ||
+                                    strValue.charAt(k + 1) == rowDelimiter))
+                                {
+                                    inQuote = true;
+                                    break;
+                                }
+                            }
+                            if (inQuote) {
+                                continue;
+                            }
+                        }
+                    default:
+                        cellValue.append(c);
+                        break;
+                }
+            }
+        }
+        if (cellValue.length() > 0) {
+            curLine.add(cellValue.toString());
+        }
+        if (!curLine.isEmpty()) {
+            lines.add(curLine.toArray(new String[curLine.size()]));
+        }
+
+        return lines.toArray(new String[lines.size()][]);
     }
 
     @Override
@@ -576,6 +666,9 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
         spreadsheet.redrawGrid();
         spreadsheet.updateScrollbars();
 
+        if (curAttribute == null) {
+            curAttribute = getFocusAttribute();
+        }
         if (curAttribute != null) {
             spreadsheet.showColumn(curAttribute);
         }
@@ -854,7 +947,8 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
         if (rsFont != null) {
             this.spreadsheet.setFont(rsFont);
         }
-        Color previewBack = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_SET_PREVIEW_BACK);
+        final ColorRegistry colorRegistry = currentTheme.getColorRegistry();
+        Color previewBack = colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_SET_PREVIEW_BACK);
         if (previewBack != null) {
 //            this.previewPane.getViewPlaceholder().setBackground(previewBack);
 //            for (Control control : this.previewPane.getViewPlaceholder().getChildren()) {
@@ -862,11 +956,14 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
 //            }
         }
         //this.foregroundDefault = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_CELL_FORE);
-        this.backgroundAdded = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_CELL_NEW_BACK);
-        this.backgroundDeleted = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_CELL_DELETED_BACK);
-        this.backgroundModified = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_CELL_MODIFIED_BACK);
-        this.backgroundOdd = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_CELL_ODD_BACK);
-        this.backgroundReadOnly = currentTheme.getColorRegistry().get(ThemeConstants.COLOR_SQL_RESULT_CELL_READ_ONLY);
+        this.backgroundAdded = colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_CELL_NEW_BACK);
+        this.backgroundDeleted = colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_CELL_DELETED_BACK);
+        this.backgroundModified = colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_CELL_MODIFIED_BACK);
+        this.backgroundOdd = colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_CELL_ODD_BACK);
+        this.backgroundReadOnly = colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_CELL_READ_ONLY);
+
+        this.spreadsheet.setLineColor(colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_LINES_NORMAL));
+        this.spreadsheet.setLineSelectedColor(colorRegistry.get(ThemeConstants.COLOR_SQL_RESULT_LINES_SELECTED));
 
         this.spreadsheet.recalculateSizes();
     }
@@ -1471,6 +1568,19 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
 
         @Nullable
         @Override
+        public String getDescription(Object element) {
+            if (!getPreferenceStore().getBoolean(DBeaverPreferences.RESULT_SET_SHOW_DESCRIPTION)) {
+                return null;
+            }
+            if (element instanceof DBDAttributeBinding) {
+                return ((DBDAttributeBinding) element).getDescription();
+            } else {
+                return null;
+            }
+        }
+
+        @Nullable
+        @Override
         public Font getFont(Object element)
         {
             if (element instanceof DBDAttributeBinding) {
@@ -1488,7 +1598,7 @@ public class SpreadsheetPresentation extends AbstractPresentation implements IRe
 
         @Nullable
         @Override
-        public String getTooltip(Object element)
+        public String getToolTipText(Object element)
         {
             if (element instanceof DBDAttributeBinding) {
                 DBDAttributeBinding attributeBinding = (DBDAttributeBinding) element;

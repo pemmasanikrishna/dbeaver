@@ -1,32 +1,31 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.mysql.edit;
 
 import org.jkiss.dbeaver.DBException;
-import org.jkiss.dbeaver.ext.mysql.model.MySQLDataSource;
-import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.ext.mysql.MySQLMessages;
+import org.jkiss.dbeaver.ext.mysql.model.MySQLDataSource;
 import org.jkiss.dbeaver.ext.mysql.model.MySQLUser;
+import org.jkiss.dbeaver.model.edit.DBEPersistAction;
+import org.jkiss.dbeaver.model.edit.prop.DBECommandComposite;
 import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.impl.edit.SQLDatabasePersistAction;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
-import org.jkiss.dbeaver.model.edit.prop.DBECommandComposite;
 import org.jkiss.utils.CommonUtils;
 
 import java.util.ArrayList;
@@ -108,7 +107,7 @@ public class MySQLCommandChangeUser extends DBECommandComposite<MySQLUser, UserP
             }
             String delim = hasSet ? "," : ""; //$NON-NLS-1$ //$NON-NLS-2$
             switch (UserPropertyHandler.valueOf((String) entry.getKey())) {
-                case PASSWORD: script.append(delim).append("Password=PASSWORD('").append(SQLUtils.escapeString(CommonUtils.toString(entry.getValue()))).append("')"); hasSet = true; break; //$NON-NLS-1$ //$NON-NLS-2$
+                case PASSWORD: script.append(delim).append("Password=PASSWORD(").append(SQLUtils.quoteString(CommonUtils.toString(entry.getValue()))).append(")"); hasSet = true; break; //$NON-NLS-1$ //$NON-NLS-2$
                 case MAX_QUERIES: script.append(delim).append("Max_Questions=").append(CommonUtils.toInt(entry.getValue())); hasSet = true; break; //$NON-NLS-1$
                 case MAX_UPDATES: script.append(delim).append("Max_Updates=").append(CommonUtils.toInt(entry.getValue())); hasSet = true; break; //$NON-NLS-1$
                 case MAX_CONNECTIONS: script.append(delim).append("Max_Connections=").append(CommonUtils.toInt(entry.getValue())); hasSet = true; break; //$NON-NLS-1$
@@ -125,7 +124,7 @@ public class MySQLCommandChangeUser extends DBECommandComposite<MySQLUser, UserP
 
         script.append("ALTER USER ").append(getObject().getFullName()); //$NON-NLS-1$
         if (getProperties().containsKey(UserPropertyHandler.PASSWORD.name())) {
-            script.append("\nIDENTIFIED BY '").append(SQLUtils.escapeString(CommonUtils.toString(getProperties().get(UserPropertyHandler.PASSWORD.name())))).append("' ");
+            script.append("\nIDENTIFIED BY ").append(SQLUtils.quoteString(CommonUtils.toString(getProperties().get(UserPropertyHandler.PASSWORD.name())))).append(" ");
             hasSet = true;
         }
         StringBuilder resOptions = new StringBuilder();

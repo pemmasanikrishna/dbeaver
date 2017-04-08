@@ -1,57 +1,52 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.generic.model;
 
-import org.jkiss.dbeaver.Log;
 import org.eclipse.core.runtime.IAdaptable;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
-import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.generic.GenericConstants;
 import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaModel;
 import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaObject;
+import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPDriver;
 import org.jkiss.dbeaver.model.data.DBDValueHandlerProvider;
 import org.jkiss.dbeaver.model.exec.*;
 import org.jkiss.dbeaver.model.exec.jdbc.*;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCConstants;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
+import org.jkiss.dbeaver.model.impl.jdbc.*;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCBasicDataTypeCache;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLDialect;
 import org.jkiss.dbeaver.model.struct.*;
-import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.time.ExtendedDateFormat;
 
-import java.sql.Driver;
-import java.sql.SQLException;
-import java.sql.SQLFeatureNotSupportedException;
+import java.sql.*;
 import java.text.Format;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.regex.Matcher;
 
 /**
  * GenericDataSource
@@ -60,6 +55,8 @@ public class GenericDataSource extends JDBCDataSource
     implements DBSObjectSelector, DBPTermProvider, IAdaptable, GenericStructContainer
 {
     private static final Log log = Log.getLog(GenericDataSource.class);
+
+    static boolean populateClientAppName = false;
 
     private final TableTypeCache tableTypeCache;
     private final JDBCBasicDataTypeCache dataTypeCache;
@@ -78,10 +75,10 @@ public class GenericDataSource extends JDBCDataSource
     private DBCQueryPlanner queryPlanner;
     private Format nativeFormatTimestamp, nativeFormatTime, nativeFormatDate;
 
-    public GenericDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container, GenericMetaModel metaModel)
+    public GenericDataSource(@NotNull DBRProgressMonitor monitor, @NotNull DBPDataSourceContainer container, @NotNull GenericMetaModel metaModel, @NotNull SQLDialect dialect)
         throws DBException
     {
-        super(monitor, container);
+        super(monitor, container, dialect, false);
         this.metaModel = metaModel;
         final DBPDriver driver = container.getDriver();
         this.dataTypeCache = metaModel.createDataTypeCache(container);
@@ -103,6 +100,8 @@ public class GenericDataSource extends JDBCDataSource
         nativeFormatTimestamp = makeNativeFormat(GenericConstants.PARAM_NATIVE_FORMAT_TIMESTAMP);
         nativeFormatTime = makeNativeFormat(GenericConstants.PARAM_NATIVE_FORMAT_TIME);
         nativeFormatDate = makeNativeFormat(GenericConstants.PARAM_NATIVE_FORMAT_DATE);
+
+        initializeMainContext(monitor);
     }
 
     @Override
@@ -116,6 +115,41 @@ public class GenericDataSource extends JDBCDataSource
             connectionInfo.setUrl(connectionURL);
         }
         return connectionURL;
+    }
+
+    @Override
+    protected Connection openConnection(@NotNull DBRProgressMonitor monitor, @NotNull String purpose) throws DBCException {
+        Connection jdbcConnection = super.openConnection(monitor, purpose);
+
+        if (populateClientAppName) {
+            // Provide client info
+            // "ApplicationName" property seems to be pretty standard
+            try {
+                final ResultSet ciList = jdbcConnection.getMetaData().getClientInfoProperties();
+                if (ciList != null) {
+                    try {
+                        while (ciList.next()) {
+                            final String name = JDBCUtils.safeGetString(ciList, "NAME");
+                            final int maxLength = JDBCUtils.safeGetInt(ciList, "MAX_LEN");
+                            if ("ApplicationName".equals(name)) {
+                                String appName = DBUtils.getClientApplicationName(getContainer(), purpose);
+                                if (maxLength > 0) {
+                                    appName = CommonUtils.truncateString(appName, maxLength <= 0 ? 48 : maxLength);
+                                }
+                                jdbcConnection.setClientInfo("ApplicationName", appName);
+                                break;
+                            }
+                        }
+                    } finally {
+                        ciList.close();
+                    }
+                }
+            } catch (Throwable e) {
+                // just ignore
+            }
+        }
+
+        return jdbcConnection;
     }
 
     protected void initializeContextState(@NotNull DBRProgressMonitor monitor, @NotNull JDBCExecutionContext context, boolean setActiveObject) throws DBCException {
@@ -137,14 +171,14 @@ public class GenericDataSource extends JDBCDataSource
     @Nullable
     public GenericMetaObject getMetaObject(String id)
     {
-        return metaModel.getObject(id);
+        return metaModel.getMetaObject(id);
     }
 
     @Override
     protected DBPDataSourceInfo createDataSourceInfo(@NotNull JDBCDatabaseMetaData metaData)
     {
         final GenericDataSourceInfo info = new GenericDataSourceInfo(getContainer().getDriver(), metaData);
-        final GenericSQLDialect dialect = (GenericSQLDialect)getSQLDialect();
+        final JDBCSQLDialect dialect = (JDBCSQLDialect)getSQLDialect();
 
         final Object supportsReferences = getContainer().getDriver().getDriverParameter(GenericConstants.PARAM_SUPPORTS_REFERENCES);
         if (supportsReferences != null) {
@@ -174,24 +208,21 @@ public class GenericDataSource extends JDBCDataSource
     }
 
     @Override
-    protected SQLDialect createSQLDialect(@NotNull JDBCDatabaseMetaData metaData) {
-        return new GenericSQLDialect(this, metaData);
-    }
-
-    @Override
-    public void close()
+    public void shutdown(DBRProgressMonitor monitor)
     {
-        super.close();
+        super.shutdown(monitor);
         String paramShutdown = CommonUtils.toString(getContainer().getDriver().getDriverParameter(GenericConstants.PARAM_SHUTDOWN_URL_PARAM));
         if (!CommonUtils.isEmpty(paramShutdown)) {
+            monitor.subTask("Shutdown embedded database");
             try {
                 final Driver driver = getDriverInstance(VoidProgressMonitor.INSTANCE); // Use void monitor - driver already loaded
                 if (driver != null) {
                     driver.connect(getContainer().getActualConnectionConfiguration().getUrl() + paramShutdown, null);
                 }
             } catch (Exception e) {
-                log.debug(e);
+                log.debug("Shutdown finished: :" + e.getMessage());
             }
+            monitor.worked(1);
         }
     }
 
@@ -573,7 +604,7 @@ public class GenericDataSource extends JDBCDataSource
                 container = structureContainer;
             }
             if (container == null) {
-                log.error("Schema '" + schemaName + "' not found");
+                log.debug("Schema '" + schemaName + "' not found");
                 return null;
             }
         }
@@ -811,7 +842,7 @@ public class GenericDataSource extends JDBCDataSource
                 if (CommonUtils.isEmpty(querySetActiveDB) || !(entity instanceof GenericObjectContainer)) {
                     throw new DBCException("Active database can't be changed for this kind of datasource!");
                 }
-                String changeQuery = querySetActiveDB.replaceFirst("\\?", entity.getName());
+                String changeQuery = querySetActiveDB.replaceFirst("\\?", Matcher.quoteReplacement(entity.getName()));
                 try (JDBCPreparedStatement dbStat = session.prepareStatement(changeQuery)) {
                     dbStat.execute();
                 }
@@ -859,7 +890,7 @@ public class GenericDataSource extends JDBCDataSource
 
     @Nullable
     @Override
-    public ErrorPosition[] getErrorPosition(@NotNull DBCSession session, @NotNull String query, @NotNull Throwable error) {
+    public ErrorPosition[] getErrorPosition(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext context, @NotNull String query, @NotNull Throwable error) {
         ErrorPosition position = metaModel.getErrorPosition(error);
         return position == null ? null : new ErrorPosition[] { position };
     }
@@ -879,7 +910,7 @@ public class GenericDataSource extends JDBCDataSource
     @NotNull
     public DBPDataKind resolveDataKind(@NotNull String typeName, int valueType)
     {
-        DBSDataType dataType = dataTypeCache.getCachedObject(typeName);
+        DBSDataType dataType = getLocalDataType(typeName);
         if (dataType != null) {
             return super.resolveDataKind(dataType.getTypeName(), dataType.getTypeID());
         }

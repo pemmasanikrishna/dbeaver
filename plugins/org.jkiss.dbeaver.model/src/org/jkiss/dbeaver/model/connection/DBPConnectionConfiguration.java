@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.connection;
 
@@ -22,6 +21,7 @@ import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.DBPObject;
 import org.jkiss.dbeaver.model.net.DBWHandlerConfiguration;
 import org.jkiss.dbeaver.model.runtime.DBRShellCommand;
+import org.jkiss.utils.CommonUtils;
 
 import java.util.*;
 
@@ -39,9 +39,9 @@ public class DBPConnectionConfiguration implements DBPObject
     private String url;
     private String clientHomeId;
     @NotNull
-    private final Map<Object, Object> properties;
+    private final Map<String, String> properties;
     @NotNull
-    private final Map<Object, Object> providerProperties;
+    private final Map<String, String> providerProperties;
     @NotNull
     private final Map<DBPConnectionEventType, DBRShellCommand> events;
     @NotNull
@@ -74,7 +74,7 @@ public class DBPConnectionConfiguration implements DBPObject
         this.clientHomeId = info.clientHomeId;
         this.connectionType = info.connectionType;
         this.properties = new HashMap<>(info.properties);
-        this.providerProperties = new HashMap<>(info.properties);
+        this.providerProperties = new HashMap<>(info.providerProperties);
         this.events = new HashMap<>(info.events.size());
         for (Map.Entry<DBPConnectionEventType, DBRShellCommand> entry : info.events.entrySet()) {
             this.events.put(entry.getKey(), new DBRShellCommand(entry.getValue()));
@@ -170,23 +170,23 @@ public class DBPConnectionConfiguration implements DBPObject
     ////////////////////////////////////////////////////
     // Properties (connection properties, usually used by driver)
 
-    public Object getProperty(Object name)
+    public String getProperty(String name)
     {
         return properties.get(name);
     }
 
-    public void setProperty(Object name, Object value)
+    public void setProperty(String name, String value)
     {
         properties.put(name, value);
     }
 
     @NotNull
-    public Map<Object, Object> getProperties()
+    public Map<String, String> getProperties()
     {
         return properties;
     }
 
-    public void setProperties(@NotNull Map<Object, Object> properties)
+    public void setProperties(@NotNull Map<String, String> properties)
     {
         this.properties.clear();
         this.properties.putAll(properties);
@@ -195,22 +195,22 @@ public class DBPConnectionConfiguration implements DBPObject
     ////////////////////////////////////////////////////
     // Provider properties (extra configuration parameters)
 
-    public Object getProviderProperty(Object name)
+    public String getProviderProperty(String name)
     {
         return providerProperties.get(name);
     }
 
-    public void setProviderProperty(Object name, Object value)
+    public void setProviderProperty(String name, String value)
     {
         providerProperties.put(name, value);
     }
 
     @NotNull
-    public Map<Object, Object> getProviderProperties() {
+    public Map<String, String> getProviderProperties() {
         return providerProperties;
     }
 
-    public void setProviderProperties(@NotNull Map<Object, Object> properties)
+    public void setProviderProperties(@NotNull Map<String, String> properties)
     {
         this.providerProperties.clear();
         this.providerProperties.putAll(properties);
@@ -325,5 +325,34 @@ public class DBPConnectionConfiguration implements DBPObject
 
     public void setKeepAliveInterval(int keepAliveInterval) {
         this.keepAliveInterval = keepAliveInterval;
+    }
+
+    @Override
+    public String toString() {
+        return "Connection: " + (url == null ? databaseName : url);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof DBPConnectionConfiguration)) {
+            return false;
+        }
+        DBPConnectionConfiguration source = (DBPConnectionConfiguration)obj;
+        return
+            CommonUtils.equalObjects(this.hostName, source.hostName) &&
+            CommonUtils.equalObjects(this.hostPort, source.hostPort) &&
+            CommonUtils.equalObjects(this.serverName, source.serverName) &&
+            CommonUtils.equalObjects(this.databaseName, source.databaseName) &&
+            CommonUtils.equalObjects(this.userName, source.userName) &&
+            CommonUtils.equalObjects(this.userPassword, source.userPassword) &&
+            CommonUtils.equalObjects(this.url, source.url) &&
+            CommonUtils.equalObjects(this.clientHomeId, source.clientHomeId) &&
+            CommonUtils.equalObjects(this.connectionType, source.connectionType) &&
+            CommonUtils.equalObjects(this.properties, source.properties) &&
+            CommonUtils.equalObjects(this.providerProperties, source.providerProperties) &&
+            CommonUtils.equalObjects(this.events, source.events) &&
+            CommonUtils.equalObjects(this.handlers, source.handlers) &&
+            CommonUtils.equalObjects(this.bootstrap, source.bootstrap) &&
+            this.keepAliveInterval == source.keepAliveInterval;
     }
 }

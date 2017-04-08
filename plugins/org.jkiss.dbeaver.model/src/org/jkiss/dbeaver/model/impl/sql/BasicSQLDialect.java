@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.impl.sql;
 
@@ -28,6 +27,7 @@ import org.jkiss.dbeaver.model.impl.data.formatters.BinaryFormatterHexNative;
 import org.jkiss.dbeaver.model.sql.SQLConstants;
 import org.jkiss.dbeaver.model.sql.SQLDialect;
 import org.jkiss.dbeaver.model.sql.SQLStateType;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.sql.parser.SQLSemanticProcessor;
 import org.jkiss.dbeaver.model.struct.DBSAttributeBase;
 import org.jkiss.utils.ArrayUtils;
@@ -43,20 +43,26 @@ public class BasicSQLDialect implements SQLDialect {
     private static final String[] DEFAULT_LINE_COMMENTS = {SQLConstants.SL_COMMENT};
     private static final String[] EXEC_KEYWORDS = new String[0];
 
-    public static final String[][] DEFAULT_BEGIN_END_BLOCK = new String[][]{
+    private static final String[][] DEFAULT_BEGIN_END_BLOCK = new String[][]{
         {SQLConstants.BLOCK_BEGIN, SQLConstants.BLOCK_END}
     };
+    protected static final String[] NON_TRANSACTIONAL_KEYWORDS = new String[]{
+        //SQLConstants.KEYWORD_SELECT, "WITH",
+        "EXPLAIN", "DESCRIBE", "DESC", "USE", "SET", "COMMIT", "ROLLBACK" };
+    private static final String[] CORE_NON_TRANSACTIONAL_KEYWORDS = new String[]{
+            SQLConstants.KEYWORD_SELECT,
+            };
 
     // Keywords
     private TreeMap<String, DBPKeywordType> allKeywords = new TreeMap<>();
 
-    protected final TreeSet<String> reservedWords = new TreeSet<>();
+    private final TreeSet<String> reservedWords = new TreeSet<>();
     private final TreeSet<String> functions = new TreeSet<>();
     protected final TreeSet<String> types = new TreeSet<>();
     protected final TreeSet<String> tableQueryWords = new TreeSet<>();
-    protected final TreeSet<String> columnQueryWords = new TreeSet<>();
+    private final TreeSet<String> columnQueryWords = new TreeSet<>();
     // Comments
-    protected Pair<String, String> multiLineComments = new Pair<>(SQLConstants.ML_COMMENT_START, SQLConstants.ML_COMMENT_END);
+    private Pair<String, String> multiLineComments = new Pair<>(SQLConstants.ML_COMMENT_START, SQLConstants.ML_COMMENT_END);
 
     public static final BasicSQLDialect INSTANCE = new BasicSQLDialect();
 
@@ -84,13 +90,13 @@ public class BasicSQLDialect implements SQLDialect {
         return EXEC_KEYWORDS;
     }
 
-    public void addSQLKeyword(String keyword)
+    protected void addSQLKeyword(String keyword)
     {
         reservedWords.add(keyword);
         allKeywords.put(keyword, DBPKeywordType.KEYWORD);
     }
 
-    public void removeSQLKeyword(String keyword)
+    protected void removeSQLKeyword(String keyword)
     {
         reservedWords.remove(keyword);
         allKeywords.remove(keyword);
@@ -102,7 +108,9 @@ public class BasicSQLDialect implements SQLDialect {
     }
 
     protected void addDataTypes(Collection<String> allTypes) {
-        types.addAll(allTypes);
+        for (String type : allTypes) {
+            types.add(type.toUpperCase(Locale.ENGLISH));
+        }
         addKeywords(allTypes, DBPKeywordType.TYPE);
     }
 
@@ -111,10 +119,11 @@ public class BasicSQLDialect implements SQLDialect {
      * @param set     keywords. Must be in upper case.
      * @param type    keyword type
      */
-    public void addKeywords(Collection<String> set, DBPKeywordType type)
+    protected void addKeywords(Collection<String> set, DBPKeywordType type)
     {
         if (set != null) {
             for (String keyword : set) {
+                keyword = keyword.toUpperCase(Locale.ENGLISH);
                 reservedWords.add(keyword);
                 DBPKeywordType oldType = allKeywords.get(keyword);
                 if (oldType != DBPKeywordType.KEYWORD) {
@@ -377,6 +386,28 @@ public class BasicSQLDialect implements SQLDialect {
     }
 
     @Override
+    public boolean isTransactionModifyingQuery(String queryString) {
+        queryString = SQLUtils.stripComments(this, queryString.toUpperCase(Locale.ENGLISH)).trim();
+        if (queryString.isEmpty()) {
+            // Empty query - must be some metadata reading or something
+            // anyhow it shouldn't be transactional
+            return false;
+        }
+        String[] ntk = getNonTransactionKeywords();
+        for (int i = 0; i < ntk.length; i++) {
+            if (queryString.startsWith(ntk[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @NotNull
+    protected String[] getNonTransactionKeywords() {
+        return isStandardSQL() ? NON_TRANSACTIONAL_KEYWORDS : CORE_NON_TRANSACTIONAL_KEYWORDS;
+    }
+
+    @Override
     public boolean isQuoteReservedWords() {
         return true;
     }
@@ -385,7 +416,7 @@ public class BasicSQLDialect implements SQLDialect {
         return true;
     }
 
-    protected void loadStandardKeywords()
+    private void loadStandardKeywords()
     {
         // Add default set of keywords
         Set<String> all = new HashSet<>();

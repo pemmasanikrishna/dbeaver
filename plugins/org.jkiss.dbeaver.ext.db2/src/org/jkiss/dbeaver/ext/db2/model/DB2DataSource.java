@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2013-2016 Denis Forveille (titou10.titou10@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.db2.model;
 
@@ -47,6 +46,7 @@ import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCDatabaseMetaData;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.plan.DBCPlan;
+import org.jkiss.dbeaver.model.exec.plan.DBCPlanStyle;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
 import org.jkiss.dbeaver.model.impl.DBSObjectCache;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
@@ -56,7 +56,6 @@ import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectSimpleCache;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
-import org.jkiss.dbeaver.model.sql.SQLDialect;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSObjectSelector;
 import org.jkiss.dbeaver.model.struct.DBSStructureAssistant;
@@ -64,6 +63,7 @@ import org.jkiss.dbeaver.ui.UITask;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 
@@ -139,7 +139,7 @@ public class DB2DataSource extends JDBCDataSource implements DBSObjectSelector, 
 
     public DB2DataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException
     {
-        super(monitor, container);
+        super(monitor, container, new DB2SQLDialect());
     }
 
     @Override
@@ -275,13 +275,7 @@ public class DB2DataSource extends JDBCDataSource implements DBSObjectSelector, 
     }
 
     @Override
-    protected SQLDialect createSQLDialect(@NotNull JDBCDatabaseMetaData metaData)
-    {
-        return new DB2SQLDialect(metaData);
-    }
-
-    @Override
-    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor) throws DBCException
+    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor, String purpose) throws DBCException
     {
         Map<String, String> props = new HashMap<>();
         props.putAll(DB2DataSourceProvider.getConnectionsProps());
@@ -289,6 +283,23 @@ public class DB2DataSource extends JDBCDataSource implements DBSObjectSelector, 
             props.put(DB2Constants.PROP_READ_ONLY, "true");
         }
         return props;
+    }
+
+    @Override
+    protected Connection openConnection(@NotNull DBRProgressMonitor monitor, @NotNull String purpose) throws DBCException {
+        Connection db2Connection = super.openConnection(monitor, purpose);
+
+        {
+            // Provide client info
+            try {
+                db2Connection.setClientInfo("ApplicationName",
+                    CommonUtils.truncateString(DBUtils.getClientApplicationName(getContainer(), purpose), 255));
+            } catch (Throwable e) {
+                // just ignore
+            }
+        }
+
+        return db2Connection;
     }
 
     @Override
@@ -435,8 +446,9 @@ public class DB2DataSource extends JDBCDataSource implements DBSObjectSelector, 
     // Plan Tables
     // --------------
 
+    @NotNull
     @Override
-    public DBCPlan planQueryExecution(DBCSession session, String query) throws DBCException
+    public DBCPlan planQueryExecution(@NotNull DBCSession session, @NotNull String query) throws DBCException
     {
         String ptSchemaname = getExplainTablesSchemaName(session);
         if (ptSchemaname == null) {
@@ -445,6 +457,12 @@ public class DB2DataSource extends JDBCDataSource implements DBSObjectSelector, 
         DB2PlanAnalyser plan = new DB2PlanAnalyser(query, ptSchemaname);
         plan.explain((JDBCSession) session);
         return plan;
+    }
+
+    @NotNull
+    @Override
+    public DBCPlanStyle getPlanStyle() {
+        return DBCPlanStyle.PLAN;
     }
 
     private String getExplainTablesSchemaName(DBCSession session) throws DBCException

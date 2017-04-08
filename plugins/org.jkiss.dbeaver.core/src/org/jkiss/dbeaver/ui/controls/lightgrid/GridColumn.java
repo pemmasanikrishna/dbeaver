@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package  org.jkiss.dbeaver.ui.controls.lightgrid;
 
@@ -138,6 +137,10 @@ class GridColumn {
             if (image != null) {
                 height = Math.max(height, topMargin + image.getBounds().height + bottomMargin);
             }
+            final String description = grid.getLabelProvider().getDescription(element);
+            if (!CommonUtils.isEmpty(description)) {
+                height += topMargin + grid.fontMetrics.getHeight();
+            }
         }
         int childHeight = 0;
         if (includeChildren && !CommonUtils.isEmpty(children)) {
@@ -151,12 +154,21 @@ class GridColumn {
     int computeHeaderWidth()
     {
         int x = leftMargin;
-        Image image = grid.getLabelProvider().getImage(element);
-        String text = grid.getLabelProvider().getText(element);
+        final IGridLabelProvider labelProvider = grid.getLabelProvider();
+        Image image = labelProvider.getImage(element);
+        String text = labelProvider.getText(element);
+        String description = labelProvider.getDescription(element);
         if (image != null) {
             x += image.getBounds().width + imageSpacing;
         }
-        x += grid.sizingGC.stringExtent(text).x + rightMargin;
+        int textWidth = grid.sizingGC.stringExtent(text).x;
+        if (!CommonUtils.isEmpty(description)) {
+            int descWidth = grid.sizingGC.stringExtent(description).x;
+            if (descWidth > textWidth) {
+                textWidth = descWidth;
+            }
+        }
+        x += textWidth + rightMargin;
         if (isSortable()) {
             x += rightMargin + GridColumnRenderer.getSortControlBounds().width;
         }
@@ -269,7 +281,7 @@ class GridColumn {
 	 */
 	@Nullable
     public String getHeaderTooltip() {
-        String tip = grid.getLabelProvider().getTooltip(element);
+        String tip = grid.getLabelProvider().getToolTipText(element);
         if (tip == null) {
             tip = grid.getLabelProvider().getText(element);
         }

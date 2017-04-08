@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.connection;
 
@@ -50,6 +49,7 @@ public class EditShellCommandsDialogPage extends ActiveWizardPage<ConnectionWiza
     private Button showProcessCheck;
     private Button terminateCheck;
     private Button waitFinishCheck;
+    private Spinner waitFinishTimeoutMs;
     private Table eventTypeTable;
 
     private final Map<DBPConnectionEventType, DBRShellCommand> eventsCache = new HashMap<>();
@@ -143,6 +143,8 @@ public class EditShellCommandsDialogPage extends ActiveWizardPage<ConnectionWiza
             showProcessCheck.addSelectionListener(eventEditAdapter);
             waitFinishCheck = UIUtils.createCheckbox(detailsGroup, CoreMessages.dialog_connection_events_checkbox_wait_finish, false);
             waitFinishCheck.addSelectionListener(eventEditAdapter);
+            waitFinishTimeoutMs = createWaitFinishTimeout(detailsGroup);
+            waitFinishTimeoutMs.addSelectionListener(eventEditAdapter);
             terminateCheck = UIUtils.createCheckbox(detailsGroup, CoreMessages.dialog_connection_events_checkbox_terminate_at_disconnect, false);
             terminateCheck.addSelectionListener(eventEditAdapter);
 
@@ -167,6 +169,24 @@ public class EditShellCommandsDialogPage extends ActiveWizardPage<ConnectionWiza
         selectEventType(null);
 
         setControl(group);
+    }
+
+    private static Spinner createWaitFinishTimeout(Composite detailsGroup) {
+        Composite waitFinishGroup = new Composite(detailsGroup, SWT.NONE);
+        GridLayout waitFinishGroupLayout = new GridLayout(2, false);
+        waitFinishGroupLayout.marginWidth = 0;
+        waitFinishGroupLayout.marginHeight = 0;
+        waitFinishGroupLayout.marginLeft = 25;
+        waitFinishGroup.setLayout(waitFinishGroupLayout);
+
+        GridData gridData = new GridData(GridData.FILL_HORIZONTAL);
+        waitFinishGroup.setLayoutData(gridData);
+
+        int defaultValue = DBRShellCommand.WAIT_PROCESS_TIMEOUT_FOREVER;
+        int maxSelection = DBRShellCommand.WAIT_PROCESS_TIMEOUT_MAX_SELECTION;
+        Spinner spinner = UIUtils.createSpinner(waitFinishGroup, "-1 to wait forever", 0, defaultValue, maxSelection);
+        UIUtils.createLabel(waitFinishGroup, CoreMessages.dialog_connection_events_checkbox_wait_finish_timeout);
+        return spinner;
     }
 
     private void addVariableLegend(Composite group, String varName, String description) {
@@ -214,6 +234,8 @@ public class EditShellCommandsDialogPage extends ActiveWizardPage<ConnectionWiza
                 }
                 command.setShowProcessPanel(showProcessCheck.getSelection());
                 command.setWaitProcessFinish(waitFinishCheck.getSelection());
+                waitFinishTimeoutMs.setEnabled(waitFinishCheck.getSelection());
+                command.setWaitProcessTimeoutMs(waitFinishTimeoutMs.getSelection());
                 command.setTerminateAtDisconnect(terminateCheck.getSelection());
                 if (prevEnabled != command.isEnabled()) {
                     selectEventType(eventType);
@@ -230,17 +252,20 @@ public class EditShellCommandsDialogPage extends ActiveWizardPage<ConnectionWiza
         commandText.setEnabled(command != null && command.isEnabled());
         showProcessCheck.setEnabled(command != null && command.isEnabled());
         waitFinishCheck.setEnabled(command != null && command.isEnabled());
+        waitFinishTimeoutMs.setEnabled(waitFinishCheck.isEnabled());
         terminateCheck.setEnabled(command != null && command.isEnabled());
 
         if (command != null) {
             commandText.setText(CommonUtils.toString(command.getCommand()));
             showProcessCheck.setSelection(command.isShowProcessPanel());
             waitFinishCheck.setSelection(command.isWaitProcessFinish());
+            waitFinishTimeoutMs.setSelection(command.getWaitProcessTimeoutMs());
             terminateCheck.setSelection(command.isTerminateAtDisconnect());
         } else {
             commandText.setText(""); //$NON-NLS-1$
             showProcessCheck.setSelection(false);
             waitFinishCheck.setSelection(false);
+            waitFinishTimeoutMs.setSelection(DBRShellCommand.WAIT_PROCESS_TIMEOUT_FOREVER);
             terminateCheck.setSelection(false);
         }
     }

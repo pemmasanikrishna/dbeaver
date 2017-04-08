@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.core;
@@ -25,10 +24,12 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.ui.IWorkbench;
+import org.eclipse.ui.PlatformUI;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.model.DBPExternalFileManager;
 import org.jkiss.dbeaver.model.app.*;
 import org.jkiss.dbeaver.model.data.DBDRegistry;
 import org.jkiss.dbeaver.model.edit.DBERegistry;
@@ -50,10 +51,10 @@ import org.jkiss.dbeaver.runtime.net.GlobalProxyAuthenticator;
 import org.jkiss.dbeaver.runtime.net.GlobalProxySelector;
 import org.jkiss.dbeaver.runtime.qm.QMControllerImpl;
 import org.jkiss.dbeaver.runtime.qm.QMLogFileWriter;
+import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.StandardConstants;
 import org.osgi.framework.Bundle;
-import org.osgi.framework.Version;
 
 import java.io.File;
 import java.io.IOException;
@@ -115,7 +116,7 @@ public class DBeaverCore implements DBPPlatform {
 
     private static DBeaverCore createInstance()
     {
-        log.debug("Initializing " + getProductTitle());
+        log.debug("Initializing " + GeneralUtils.getProductTitle());
         if (Platform.getProduct() != null) {
             Bundle definingBundle = Platform.getProduct().getDefiningBundle();
             if (definingBundle != null) {
@@ -152,22 +153,16 @@ public class DBeaverCore implements DBPPlatform {
 
     public static boolean isClosing()
     {
-        return isClosing;
+        if (isClosing) {
+            return true;
+        }
+        IWorkbench workbench = PlatformUI.getWorkbench();
+        return workbench == null || workbench.isClosing();
     }
 
     public static void setClosing(boolean closing)
     {
         isClosing = closing;
-    }
-
-    public static Version getVersion()
-    {
-        return DBeaverActivator.getInstance().getBundle().getVersion();
-    }
-
-    public static String getProductTitle()
-    {
-        return Platform.getProduct().getName() + " " + getVersion();
     }
 
     public static DBPPreferenceStore getGlobalPreferenceStore()
@@ -409,6 +404,11 @@ public class DBeaverCore implements DBPPlatform {
             }
         }
         return tempFolder;
+    }
+
+    @Override
+    public boolean isShuttingDown() {
+        return isClosing();
     }
 
     @NotNull

@@ -1,32 +1,31 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.editors.object.struct;
 
 import org.eclipse.core.runtime.Assert;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.widgets.Button;
-import org.eclipse.swt.widgets.Combo;
-import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.*;
 import org.jkiss.dbeaver.core.CoreMessages;
+import org.jkiss.dbeaver.model.struct.DBSEntityAttribute;
 import org.jkiss.dbeaver.model.struct.rdb.DBSIndexType;
 import org.jkiss.dbeaver.model.struct.rdb.DBSTable;
 import org.jkiss.dbeaver.ui.UIUtils;
@@ -43,9 +42,13 @@ import java.util.List;
  */
 public class EditIndexPage extends AttributesSelectorPage {
 
+    public static final String PROP_DESC = "desc";
+
     private List<DBSIndexType> indexTypes;
     private DBSIndexType selectedIndexType;
     private boolean unique;
+
+    private int descColumnIndex;
 
     public EditIndexPage(
         String title,
@@ -97,4 +100,46 @@ public class EditIndexPage extends AttributesSelectorPage {
     public boolean isUnique() {
         return unique;
     }
+
+    @Override
+    protected void createAttributeColumns(Table columnsTable) {
+        super.createAttributeColumns(columnsTable);
+
+        TableColumn colDesc = UIUtils.createTableColumn(columnsTable, SWT.NONE, "Order");
+        colDesc.setToolTipText("Ascending/descending");
+    }
+
+    @Override
+    protected int fillAttributeColumns(DBSEntityAttribute attribute, AttributeInfo attributeInfo, TableItem columnItem) {
+        descColumnIndex = super.fillAttributeColumns(attribute, attributeInfo, columnItem) + 1;
+
+        boolean isDesc = Boolean.TRUE.equals(attributeInfo.getProperty(PROP_DESC));
+        columnItem.setText(descColumnIndex, isDesc ? "DESC" : "ASC");
+
+        return descColumnIndex;
+    }
+
+    protected Control createCellEditor(Table table, int index, TableItem item, AttributeInfo attributeInfo) {
+        if (index == descColumnIndex) {
+            boolean isDesc = Boolean.TRUE.equals(attributeInfo.getProperty(PROP_DESC));
+            CCombo combo = new CCombo(table, SWT.DROP_DOWN | SWT.READ_ONLY);
+            combo.add("ASC");
+            combo.add("DESC");
+            combo.select(isDesc ? 1 : 0);
+            return combo;
+        }
+        return super.createCellEditor(table, index, item, attributeInfo);
+    }
+
+    protected void saveCellValue(Control control, int index, TableItem item, AttributeInfo attributeInfo) {
+        if (index == descColumnIndex) {
+            CCombo combo = (CCombo) control;
+            boolean isDesc = combo.getSelectionIndex() == 1;
+            item.setText(index, isDesc ? "DESC" : "ASC");
+            attributeInfo.setProperty(PROP_DESC, isDesc);
+        } else {
+            super.saveCellValue(control, index, item, attributeInfo);
+        }
+    }
+
 }

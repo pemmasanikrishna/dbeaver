@@ -1,32 +1,35 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.connection;
 
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.dialogs.IDialogConstants;
+import org.eclipse.jface.viewers.IColorProvider;
+import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.ModifyEvent;
 import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Font;
+import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.*;
@@ -54,7 +57,7 @@ import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.IHelpContextIds;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.controls.CImageCombo;
+import org.jkiss.dbeaver.ui.controls.CSmartCombo;
 import org.jkiss.dbeaver.ui.dialogs.ActiveWizardPage;
 import org.jkiss.dbeaver.ui.preferences.PrefPageConnectionTypes;
 import org.jkiss.utils.CommonUtils;
@@ -71,7 +74,8 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
     private ConnectionWizard wizard;
     private DataSourceDescriptor dataSourceDescriptor;
     private Text connectionNameText;
-    private CImageCombo connectionTypeCombo;
+    private CSmartCombo<DBPConnectionType> connectionTypeCombo;
+    private CSmartCombo<DBPDataSourceFolder> connectionFolderCombo;
     private Button savePasswordCheck;
     private Button autocommit;
     private Combo isolationLevel;
@@ -92,6 +96,7 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
     private List<String> bootstrapQueries;
     private boolean ignoreBootstrapErrors;
     private Text descriptionText;
+    private DBPDataSourceFolder dataSourceFolder;
 
     private static class FilterInfo {
         final Class<?> type;
@@ -185,14 +190,22 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
                 // Get settings from data source descriptor
                 final DBPConnectionConfiguration conConfig = dataSourceDescriptor.getConnectionConfiguration();
                 connectionTypeCombo.select(conConfig.getConnectionType());
+                dataSourceFolder = dataSourceDescriptor.getFolder();
+                if (dataSourceDescriptor.getFolder() == null) {
+                    connectionFolderCombo.select(0);
+                } else {
+                    connectionFolderCombo.select(dataSourceFolder);
+                }
                 savePasswordCheck.setSelection(dataSourceDescriptor.isSavePassword());
                 autocommit.setSelection(dataSourceDescriptor.isDefaultAutoCommit());
                 showSystemObjects.setSelection(dataSourceDescriptor.isShowSystemObjects());
                 showUtilityObjects.setSelection(dataSourceDescriptor.isShowUtilityObjects());
                 readOnlyConnection.setSelection(dataSourceDescriptor.isConnectionReadOnly());
                 isolationLevel.add("");
-                if (dataSourceDescriptor.isConnected()) {
-                    DBPDataSource dataSource = dataSourceDescriptor.getDataSource();
+
+                DataSourceDescriptor originalDataSource = getWizard().getOriginalDataSource();
+                if (originalDataSource != null && originalDataSource.isConnected()) {
+                    DBPDataSource dataSource = originalDataSource.getDataSource();
                     isolationLevel.setEnabled(!autocommit.getSelection());
                     supportedLevels.clear();
                     DBPTransactionIsolation defaultLevel = dataSourceDescriptor.getActiveTransactionsIsolation();
@@ -232,7 +245,12 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
             // Default settings
             savePasswordCheck.setSelection(true);
             connectionTypeCombo.select(0);
-            autocommit.setSelection(((DBPConnectionType)connectionTypeCombo.getData(0)).isAutocommit());
+            autocommit.setSelection((connectionTypeCombo.getItem(0)).isAutocommit());
+            if (dataSourceFolder != null) {
+                connectionFolderCombo.select(dataSourceFolder);
+            } else {
+                connectionFolderCombo.select(0);
+            }
             showSystemObjects.setSelection(true);
             showUtilityObjects.setSelection(false);
             readOnlyConnection.setSelection(false);
@@ -307,14 +325,14 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
             UIUtils.createControlLabel(group, "Connection type");
 
             Composite ctGroup = UIUtils.createPlaceholder(group, 2, 5);
-            connectionTypeCombo = new CImageCombo(ctGroup, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY);
+            connectionTypeCombo = new CSmartCombo<>(ctGroup, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY, new ConnectionTypeLabelProvider());
             loadConnectionTypes();
             connectionTypeCombo.select(0);
             connectionTypeCombo.addSelectionListener(new SelectionAdapter() {
                 @Override
                 public void widgetSelected(SelectionEvent e)
                 {
-                    DBPConnectionType type = (DBPConnectionType)connectionTypeCombo.getItem(connectionTypeCombo.getSelectionIndex()).getData();
+                    DBPConnectionType type = connectionTypeCombo.getItem(connectionTypeCombo.getSelectionIndex());
                     autocommit.setSelection(type.isAutocommit());
                 }
             });
@@ -323,8 +341,7 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
             pickerButton.setText("Edit");
             pickerButton.addSelectionListener(new SelectionAdapter() {
                 @Override
-                public void widgetSelected(SelectionEvent e)
-                {
+                public void widgetSelected(SelectionEvent e) {
                     DataSourceDescriptor dataSource = getActiveDataSource();
                     UIUtils.showPreferencesFor(
                         getControl().getShell(),
@@ -336,12 +353,20 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
                     autocommit.setSelection(connectionType.isAutocommit());
                 }
             });
-/*
-            UIUtils.createControlLabel(colorGroup, "Custom color");
-            new CImageCombo(colorGroup, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY);
-            Button pickerButton = new Button(colorGroup, SWT.PUSH);
-            pickerButton.setText("...");
-*/
+        }
+
+        {
+            UIUtils.createControlLabel(group, "Connection folder");
+
+            connectionFolderCombo = new CSmartCombo<>(group, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY, new ConnectionFolderLabelProvider());
+            //connectionFolderCombo.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            loadConnectionFolders();
+            connectionFolderCombo.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    dataSourceFolder = connectionFolderCombo.getItem(connectionFolderCombo.getSelectionIndex());
+                }
+            });
         }
 
         {
@@ -503,7 +528,23 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
     {
         connectionTypeCombo.removeAll();
         for (DBPConnectionType ct : DataSourceProviderRegistry.getInstance().getConnectionTypes()) {
-            connectionTypeCombo.add(null, ct.getName(), UIUtils.getConnectionTypeColor(ct), ct);
+            connectionTypeCombo.addItem(ct);
+        }
+    }
+
+    private void loadConnectionFolders()
+    {
+        connectionFolderCombo.removeAll();
+        connectionFolderCombo.addItem(null);
+        for (DBPDataSourceFolder folder : getWizard().getDataSourceRegistry().getRootFolders()) {
+            loadConnectionFolder(0, folder);
+        }
+    }
+
+    private void loadConnectionFolder(int level, DBPDataSourceFolder folder) {
+        connectionFolderCombo.addItem(folder);
+        for (DBPDataSourceFolder child : folder.getChildren()) {
+            loadConnectionFolder(level + 1, child);
         }
     }
 
@@ -542,12 +583,12 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
         if (!dataSource.isSavePassword()) {
             dataSource.resetPassword();
         }
+        dataSource.setFolder(dataSourceFolder);
 
         final DBPConnectionConfiguration confConfig = dataSource.getConnectionConfiguration();
 
         if (connectionTypeCombo.getSelectionIndex() >= 0) {
-            confConfig.setConnectionType(
-                (DBPConnectionType) connectionTypeCombo.getData(connectionTypeCombo.getSelectionIndex()));
+            confConfig.setConnectionType(connectionTypeCombo.getItem(connectionTypeCombo.getSelectionIndex()));
         }
         for (FilterInfo filterInfo : filters) {
             if (filterInfo.filter != null) {
@@ -582,6 +623,46 @@ class ConnectionPageGeneral extends ActiveWizardPage<ConnectionWizard> {
                     break;
                 }
             }
+        }
+    }
+
+    public void setDataSourceFolder(DBPDataSourceFolder dataSourceFolder) {
+        this.dataSourceFolder = dataSourceFolder;
+    }
+
+    private static class ConnectionTypeLabelProvider extends LabelProvider implements IColorProvider {
+        @Override
+        public String getText(Object element) {
+            return ((DBPConnectionType)element).getName();
+        }
+
+        @Override
+        public Color getForeground(Object element) {
+            return null;
+        }
+
+        @Override
+        public Color getBackground(Object element) {
+            return UIUtils.getConnectionTypeColor((DBPConnectionType)element);
+        }
+    }
+
+    private static class ConnectionFolderLabelProvider extends LabelProvider {
+        @Override
+        public Image getImage(Object element) {
+            return DBeaverIcons.getImage(DBIcon.TREE_DATABASE_CATEGORY);
+        }
+
+        @Override
+        public String getText(Object element) {
+            if (element == null) {
+                return CoreMessages.toolbar_datasource_selector_empty;
+            }
+            String prefix = "";
+            for (DBPDataSourceFolder folder = ((DBPDataSourceFolder) element).getParent(); folder != null; folder = folder.getParent()) {
+                prefix += "   ";
+            }
+            return prefix + ((DBPDataSourceFolder)element).getName();
         }
     }
 

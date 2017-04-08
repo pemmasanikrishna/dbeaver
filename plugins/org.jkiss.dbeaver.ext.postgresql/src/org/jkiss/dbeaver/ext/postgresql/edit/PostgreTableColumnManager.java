@@ -1,26 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.edit;
 
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
-import org.jkiss.dbeaver.model.DBPDataKind;
 import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
@@ -31,8 +29,10 @@ import org.jkiss.dbeaver.model.impl.edit.DBECommandAbstract;
 import org.jkiss.dbeaver.model.impl.edit.SQLDatabasePersistAction;
 import org.jkiss.dbeaver.model.impl.sql.edit.struct.SQLTableColumnManager;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.struct.DBSDataType;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.ui.UITask;
+import org.jkiss.dbeaver.ui.editors.object.struct.AttributeEditPage;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.Types;
@@ -94,7 +94,7 @@ public class PostgreTableColumnManager extends SQLTableColumnManager<PostgreTabl
         return object.getParentObject().getContainer().tableCache.getChildrenCache(object.getParentObject());
     }
 
-    protected ColumnModifier[] getSupportedModifiers()
+    protected ColumnModifier[] getSupportedModifiers(PostgreTableColumn column)
     {
         return new ColumnModifier[] {PostgreDataTypeModifier, NullNotNullModifier, DefaultModifier};
     }
@@ -107,22 +107,30 @@ public class PostgreTableColumnManager extends SQLTableColumnManager<PostgreTabl
         return decl;
     }
 
-    private String escapeComment(String comment) {
-        return comment.replace("'", "\\'");
-    }
-
     @Override
-    protected PostgreTableColumn createDatabaseObject(DBRProgressMonitor monitor, DBECommandContext context, PostgreTableBase parent, Object copyFrom)
+    protected PostgreTableColumn createDatabaseObject(final DBRProgressMonitor monitor, final DBECommandContext context, final PostgreTableBase parent, Object copyFrom)
     {
-        DBSDataType columnType = findBestDataType(parent.getDataSource(), "varchar"); //$NON-NLS-1$
+        return new UITask<PostgreTableColumn>() {
+            @Override
+            protected PostgreTableColumn runTask() {
+                final PostgreTableColumn column = new PostgreTableColumn(parent);
+                column.setName(getNewColumnName(monitor, context, parent));
+                final PostgreDataType dataType = parent.getDatabase().getDataType(PostgreOid.VARCHAR);
+                column.setDataType(dataType); //$NON-NLS-1$
+                column.setOrdinalPosition(-1);
 
-        final PostgreTableColumn column = new PostgreTableColumn(parent);
-        column.setName(getNewColumnName(monitor, context, parent));
-        final PostgreDataType dataType = parent.getDatabase().getDataType(PostgreOid.VARCHAR);
-        column.setDataType(dataType); //$NON-NLS-1$
-        column.setMaxLength(columnType != null && columnType.getDataKind() == DBPDataKind.STRING ? 100 : 0);
-        column.setOrdinalPosition(-1);
-        return column;
+                AttributeEditPage page = new AttributeEditPage(null, column);
+                if (!page.edit()) {
+                    return null;
+                }
+                // Varchar length doesn't make much sense for PG
+//                if (column.getDataKind() == DBPDataKind.STRING && !column.getTypeName().contains("text") && column.getMaxLength() <= 0) {
+//                    column.setMaxLength(100);
+//                }
+                return column;
+            }
+        }.execute();
+
     }
 
     @Override
@@ -143,19 +151,35 @@ public class PostgreTableColumnManager extends SQLTableColumnManager<PostgreTabl
         if (column.getDataType() != null) {
             typeClause += " USING " + DBUtils.getQuotedIdentifier(column) + "::" + column.getDataType().getName();
         }
-        actionList.add(new SQLDatabasePersistAction("Set column type", prefix + "TYPE " + typeClause));
-        actionList.add(new SQLDatabasePersistAction("Set column nullability", prefix + (column.isRequired() ? "SET" : "DROP") + " NOT NULL"));
+        if (command.getProperty("dataType") != null || command.getProperty("maxLength") != null || command.getProperty("precision") != null || command.getProperty("scale") != null) {
+            actionList.add(new SQLDatabasePersistAction("Set column type", prefix + "TYPE " + typeClause));
+        }
+        if (command.getProperty("required") != null) {
+            actionList.add(new SQLDatabasePersistAction("Set column nullability", prefix + (column.isRequired() ? "SET" : "DROP") + " NOT NULL"));
+        }
 
-        if (CommonUtils.isEmpty(column.getDefaultValue())) {
-            actionList.add(new SQLDatabasePersistAction("Drop column default", prefix + "DROP DEFAULT"));
-        } else {
-            actionList.add(new SQLDatabasePersistAction("Set column default", prefix + "SET DEFAULT " + column.getDefaultValue()));
+        if (command.getProperty("defaultValue") != null) {
+            if (CommonUtils.isEmpty(column.getDefaultValue())) {
+                actionList.add(new SQLDatabasePersistAction("Drop column default", prefix + "DROP DEFAULT"));
+            } else {
+                actionList.add(new SQLDatabasePersistAction("Set column default", prefix + "SET DEFAULT " + column.getDefaultValue()));
+            }
+        }
+        if (command.getProperty("description") != null) {
+            actionList.add(new SQLDatabasePersistAction("Set column comment", "COMMENT ON COLUMN " +
+                DBUtils.getObjectFullName(column.getTable(), DBPEvaluationContext.DDL) + "." + DBUtils.getQuotedIdentifier(column) +
+                " IS " + SQLUtils.quoteString(CommonUtils.notEmpty(column.getDescription()))));
         }
     }
 
     @Override
     public void renameObject(DBECommandContext commandContext, PostgreTableColumn object, String newName) throws DBException {
         processObjectRename(commandContext, object, newName);
+        final PostgreTableBase table = object.getTable();
+        if (table.isPersisted() && table instanceof PostgreViewBase) {
+            table.setObjectDefinitionText(null);
+            commandContext.addCommand(new EmptyCommand(table), new RefreshObjectReflector(), true);
+        }
     }
 
     @Override

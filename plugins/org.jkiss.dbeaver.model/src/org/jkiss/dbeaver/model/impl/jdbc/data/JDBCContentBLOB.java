@@ -1,27 +1,28 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.impl.jdbc.data;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ModelPreferences;
-import org.jkiss.dbeaver.model.app.DBPPlatform;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.DBValueFormatting;
+import org.jkiss.dbeaver.model.app.DBPPlatform;
+import org.jkiss.dbeaver.model.data.DBDContentCached;
 import org.jkiss.dbeaver.model.data.DBDContentStorage;
 import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
 import org.jkiss.dbeaver.model.exec.DBCException;
@@ -61,7 +62,7 @@ public class JDBCContentBLOB extends JDBCContentLOB {
         if (blob != null) {
             try {
                 return blob.length();
-            } catch (SQLException e) {
+            } catch (Throwable e) {
                 throw new DBCException(e, dataSource);
             }
         }
@@ -88,13 +89,12 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                         storage = BytesContentStorage.createFromStream(
                             bs,
                             contentLength,
-                            platform.getPreferenceStore().getString(ModelPreferences.CONTENT_HEX_ENCODING));
+                            getDefaultEncoding());
                     }
-                }
-                catch (SQLException e) {
-                    throw new DBCException(e, dataSource);
                 } catch (IOException e) {
                     throw new DBCException("IO error while reading content", e);
+                } catch (Throwable e) {
+                    throw new DBCException(e, dataSource);
                 }
             } else {
                 // Create new local storage
@@ -112,11 +112,11 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                 } catch (IOException e) {
                     ContentUtils.deleteTempFile(tempFile);
                     throw new DBCException("IO error while copying stream", e);
-                } catch (SQLException e) {
+                } catch (Throwable e) {
                     ContentUtils.deleteTempFile(tempFile);
                     throw new DBCException(e, dataSource);
                 }
-                this.storage = new TemporaryContentStorage(platform, tempFile);
+                this.storage = new TemporaryContentStorage(platform, tempFile, getDefaultEncoding());
             }
             // Free blob - we don't need it anymore
             releaseBlob();
@@ -139,7 +139,7 @@ public class JDBCContentBLOB extends JDBCContentLOB {
             } catch (Throwable e) {
                 // Log as warning only if it is an exception.
                 // Errors just spam log
-                log.debug(e);
+                log.debug("Error freeing BLOB: " + e.getClass().getName() + ": " + e.getMessage());
             }
             blob = null;
         }
@@ -249,7 +249,16 @@ public class JDBCContentBLOB extends JDBCContentLOB {
     @Override
     public String getDisplayString(DBDDisplayFormat format)
     {
-        return blob == null && storage == null ? null : "[BLOB]";
+        if (blob == null && storage == null) {
+            return null;
+        }
+        if (storage != null && storage instanceof DBDContentCached) {
+            final Object cachedValue = ((DBDContentCached) storage).getCachedValue();
+            if (cachedValue instanceof byte[]) {
+                return DBValueFormatting.formatBinaryString(dataSource, (byte[]) cachedValue, format);
+            }
+        }
+        return "[BLOB]";
     }
 
 }

@@ -1,25 +1,25 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.model;
 
 import org.eclipse.core.runtime.FileLocator;
 import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.FrameworkUtil;
@@ -41,7 +41,6 @@ public class DBIcon implements DBPImage
 {
     private static final Log log = Log.getLog(DBIcon.class);
 
-    public static final DBIcon TREE = new DBIcon("tree", "tree/tree.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_ADMIN = new DBIcon("admin", "tree/admin.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_DATABASE = new DBIcon("database", "tree/database.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_DATABASE_CATEGORY = new DBIcon("database_category", "tree/database_category.png"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -51,7 +50,6 @@ public class DBIcon implements DBPImage
     public static final DBIcon TREE_TABLE = new DBIcon("table", "tree/table.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_TABLE_ALIAS = new DBIcon("table_alias", "tree/table_alias.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_TABLE_LINK = new DBIcon("table_link", "tree/table_link.png"); //$NON-NLS-1$ //$NON-NLS-2$
-    public static final DBIcon TREE_TABLE_SORT = new DBIcon("table_sort", "tree/table_sort.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_TABLE_INDEX = new DBIcon("table_index", "tree/table_index.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_VIEW = new DBIcon("view", "tree/view.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_FUNCTION = new DBIcon("function", "tree/function.png"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -66,9 +64,12 @@ public class DBIcon implements DBPImage
     public static final DBIcon TREE_REFERENCE = new DBIcon("reference", "tree/reference.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_TRIGGER = new DBIcon("trigger", "tree/trigger.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_USER = new DBIcon("user", "tree/user.png"); //$NON-NLS-1$ //$NON-NLS-2$
+    public static final DBIcon TREE_USER_GROUP = new DBIcon("user_group", "tree/group.png"); //$NON-NLS-1$ //$NON-NLS-2$
+    public static final DBIcon TREE_PERMISSIONS = new DBIcon("permissions", "tree/permissions.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_PAGE = new DBIcon("page", "tree/page.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_INFO = new DBIcon("info", "tree/info.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_SESSIONS = new DBIcon("sessions", "tree/sessions.png"); //$NON-NLS-1$ //$NON-NLS-2$
+    public static final DBIcon TREE_LOCKS = new DBIcon("locks", "tree/locks.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_PACKAGE = new DBIcon("package", "tree/package.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_DATA_TYPE = new DBIcon("data_type", "tree/data_type.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_SEQUENCE = new DBIcon("sequence", "tree/sequence.png"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -80,7 +81,7 @@ public class DBIcon implements DBPImage
     public static final DBIcon TREE_JAVA_CLASS = new DBIcon("javaClass", "tree/java_class.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_JAVA_INTERFACE = new DBIcon("javaInterface", "tree/java_interface.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_LINK = new DBIcon("link", "tree/link.png"); //$NON-NLS-1$ //$NON-NLS-2$
-    public static final DBIcon TREE_FILE = new DBIcon("file", "tree/file.png"); //$NON-NLS-1$ //$NON-NLS-2$
+    public static final DBIcon TREE_FILE = new DBIcon("file", "tree/data_file.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_CLASS = new DBIcon("class", "tree/class.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_ASSOCIATION = new DBIcon("association", "tree/association.png"); //$NON-NLS-1$ //$NON-NLS-2$
     public static final DBIcon TREE_SERVER = new DBIcon("server", "tree/server.png"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -162,8 +163,8 @@ public class DBIcon implements DBPImage
                 }
                 URL fileURL = FileLocator.toFileURL(new URL(icon.path));
                 try {
-                    String filePath = fileURL.toString().replace(" ", "%20");
-                    File file = new File(new URI(filePath));
+                    URI filePath = GeneralUtils.makeURIFromFilePath(fileURL.toString());
+                    File file = new File(filePath);
                     if (!file.exists()) {
                         log.warn("Bad image '" + icon.getToken() + "' location: " + icon.getLocation());
                         continue;

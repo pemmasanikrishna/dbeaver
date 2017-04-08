@@ -1,22 +1,23 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.model.runtime;
+
+import org.jkiss.utils.CommonUtils;
 
 /**
  * DBRShellCommand
@@ -24,10 +25,14 @@ package org.jkiss.dbeaver.model.runtime;
 public class DBRShellCommand
 {
 
+    public static final int WAIT_PROCESS_TIMEOUT_MAX_SELECTION = 99999;
+    public static final int WAIT_PROCESS_TIMEOUT_FOREVER = -1;
+
     private String command;
     private boolean enabled;
     private boolean showProcessPanel = true;
     private boolean waitProcessFinish;
+    private int waitProcessTimeoutMs = WAIT_PROCESS_TIMEOUT_FOREVER;
     private boolean terminateAtDisconnect = true;
     private String workingDirectory;
 
@@ -42,7 +47,9 @@ public class DBRShellCommand
         this.enabled = command.enabled;
         this.showProcessPanel = command.showProcessPanel;
         this.waitProcessFinish = command.waitProcessFinish;
+        this.waitProcessTimeoutMs = command.waitProcessTimeoutMs;
         this.terminateAtDisconnect = command.terminateAtDisconnect;
+        this.workingDirectory = command.workingDirectory;
     }
 
     public String getCommand()
@@ -85,7 +92,15 @@ public class DBRShellCommand
         this.waitProcessFinish = waitProcessFinish;
     }
 
-    public boolean isTerminateAtDisconnect()
+    public int getWaitProcessTimeoutMs() {
+		return waitProcessTimeoutMs;
+	}
+
+	public void setWaitProcessTimeoutMs(int waitProcessTimeoutMs) {
+		this.waitProcessTimeoutMs = waitProcessTimeoutMs;
+	}
+
+	public boolean isTerminateAtDisconnect()
     {
         return terminateAtDisconnect;
     }
@@ -103,5 +118,21 @@ public class DBRShellCommand
     public void setWorkingDirectory(String workingDirectory)
     {
         this.workingDirectory = workingDirectory;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof DBRShellCommand)) {
+            return false;
+        }
+        DBRShellCommand source = (DBRShellCommand)obj;
+        return
+            CommonUtils.equalObjects(this.command, source.command) &&
+            this.enabled == source.enabled &&
+            this.showProcessPanel == source.showProcessPanel &&
+            this.waitProcessFinish == source.waitProcessFinish &&
+            this.waitProcessTimeoutMs == source.waitProcessTimeoutMs &&
+            this.terminateAtDisconnect == source.terminateAtDisconnect &&
+            CommonUtils.equalObjects(this.workingDirectory, source.workingDirectory);
     }
 }

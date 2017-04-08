@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.connection;
 
@@ -28,21 +27,21 @@ import org.eclipse.ui.IWorkbenchPropertyPage;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.core.CoreMessages;
+import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
-import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.registry.DataSourceDescriptor;
 import org.jkiss.dbeaver.registry.DataSourceViewDescriptor;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.ui.IActionConstants;
 import org.jkiss.dbeaver.ui.ICompositeDialogPage;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.actions.datasource.DataSourceHandler;
 import org.jkiss.dbeaver.ui.preferences.*;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -53,8 +52,9 @@ import java.util.Locale;
 public class EditConnectionWizard extends ConnectionWizard
 {
     @NotNull
+    private DataSourceDescriptor originalDataSource;
+    @NotNull
     private DataSourceDescriptor dataSource;
-    private DBPConnectionConfiguration oldData;
     @Nullable
     private ConnectionPageSettings pageSettings;
     private ConnectionPageGeneral pageGeneral;
@@ -67,8 +67,9 @@ public class EditConnectionWizard extends ConnectionWizard
      */
     public EditConnectionWizard(@NotNull DataSourceDescriptor dataSource)
     {
-        this.dataSource = dataSource;
-        this.oldData = new DBPConnectionConfiguration(this.dataSource.getConnectionConfiguration());
+        this.originalDataSource = dataSource;
+        this.dataSource = new DataSourceDescriptor(dataSource);
+
         setWindowTitle(CoreMessages.dialog_connection_wizard_title);
     }
 
@@ -76,6 +77,12 @@ public class EditConnectionWizard extends ConnectionWizard
     @Override
     public DataSourceDescriptor getActiveDataSource() {
         return dataSource;
+    }
+
+    @NotNull
+    @Override
+    public DataSourceDescriptor getOriginalDataSource() {
+        return originalDataSource;
     }
 
     @Override
@@ -110,6 +117,7 @@ public class EditConnectionWizard extends ConnectionWizard
 
         boolean embedded = dataSource.getDriver().isEmbedded();
         pageGeneral = new ConnectionPageGeneral(this, dataSource);
+
         if (!embedded) {
             pageNetwork = new ConnectionPageNetwork(this);
         }
@@ -137,7 +145,7 @@ public class EditConnectionWizard extends ConnectionWizard
         WizardPrefPage wizardPage = new WizardPrefPage(prefPage, title, description);
         prefPages.add(wizardPage);
         if (prefPage instanceof IWorkbenchPropertyPage) {
-            ((IWorkbenchPropertyPage) prefPage).setElement(dataSource);
+            ((IWorkbenchPropertyPage) prefPage).setElement(originalDataSource);
         }
         addPage(wizardPage);
         return wizardPage;
@@ -171,15 +179,47 @@ public class EditConnectionWizard extends ConnectionWizard
     @Override
     public boolean performFinish()
     {
+        DataSourceDescriptor dsCopy = new DataSourceDescriptor(originalDataSource);
+        DataSourceDescriptor dsChanged = new DataSourceDescriptor(dataSource);
+        saveSettings(dsChanged);
+
+        if (dsCopy.equalSettings(dsChanged)) {
+            // No changes
+            return true;
+        }
+
+        // Check locked datasources
         if (!CommonUtils.isEmpty(dataSource.getLockPasswordHash())) {
-            if (!checkLockPassword()) {
-                return false;
+            if (DBeaverCore.getInstance().getSecureStorage().useSecurePreferences() && !isOnlyUserCredentialChanged(dsCopy, dsChanged)) {
+                if (!checkLockPassword()) {
+                    return false;
+                }
             }
         }
-        dataSource.setUpdateDate(new Date());
-        saveSettings(dataSource);
-        dataSource.getRegistry().updateDataSource(dataSource);
+
+        // Save
+        saveSettings(originalDataSource);
+        originalDataSource.getRegistry().updateDataSource(originalDataSource);
+
+        if (originalDataSource.isConnected()) {
+            if (UIUtils.confirmAction(
+                getShell(),
+                "Connection changed",
+                "Connection '" + originalDataSource.getName() + "' has been changed.\nDo you want to reconnect?"))
+            {
+                DataSourceHandler.reconnectDataSource(null, originalDataSource);
+            }
+        }
+
         return true;
+    }
+
+    private boolean isOnlyUserCredentialChanged(DataSourceDescriptor dsCopy, DataSourceDescriptor dsChanged) {
+        dsCopy.getConnectionConfiguration().setUserName(null);
+        dsCopy.getConnectionConfiguration().setUserPassword(null);
+        dsChanged.getConnectionConfiguration().setUserName(null);
+        dsChanged.getConnectionConfiguration().setUserPassword(null);
+        return dsCopy.equalSettings(dsChanged);
     }
 
     private boolean checkLockPassword() {
@@ -205,7 +245,7 @@ public class EditConnectionWizard extends ConnectionWizard
     @Override
     public boolean performCancel()
     {
-        dataSource.setConnectionInfo(oldData);
+        // Just in case - cancel changes in pref pages (there shouldn't be any)
         for (WizardPrefPage prefPage : prefPages) {
             prefPage.performCancel();
         }
@@ -224,17 +264,35 @@ public class EditConnectionWizard extends ConnectionWizard
     @Override
     protected void saveSettings(DataSourceDescriptor dataSource)
     {
-        if (pageSettings != null) {
+        if (isPageActive(pageSettings)) {
             pageSettings.saveSettings(dataSource);
         }
         pageGeneral.saveSettings(dataSource);
-        if (pageNetwork != null) {
+        if (isPageActive(pageNetwork)) {
             pageNetwork.saveConfigurations(dataSource);
         }
         pageEvents.saveConfigurations(dataSource);
         for (WizardPrefPage prefPage : prefPages) {
+            savePageSettings(prefPage);
+        }
+    }
+
+    private void savePageSettings(WizardPrefPage prefPage) {
+        if (isPageActive(prefPage)) {
             prefPage.performFinish();
         }
+        final WizardPrefPage[] subPages = prefPage.getSubPages();
+        if (subPages != null) {
+            for (WizardPrefPage subPage : subPages) {
+                if (isPageActive(subPage)) {
+                    subPage.performFinish();
+                }
+            }
+        }
+    }
+
+    private static boolean isPageActive(IDialogPage page) {
+        return page != null && page.getControl() != null;
     }
 
 }

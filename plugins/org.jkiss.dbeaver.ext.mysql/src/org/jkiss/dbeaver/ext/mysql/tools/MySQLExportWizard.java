@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.mysql.tools;
 
@@ -68,6 +67,8 @@ class MySQLExportWizard extends AbstractImportExportWizard<MySQLDatabaseExportIn
     boolean removeDefiner;
     boolean binariesInHex;
     boolean showViews;
+    private String extraCommandArgs;
+
     public List<MySQLDatabaseExportInfo> objects = new ArrayList<>();
 
     private MySQLExportWizardPageObjects objectsPage;
@@ -92,6 +93,7 @@ class MySQLExportWizard extends AbstractImportExportWizard<MySQLDatabaseExportIn
         removeDefiner = CommonUtils.getBoolean(store.getString("MySQL.export.removeDefiner"), false);
         binariesInHex = CommonUtils.getBoolean(store.getString("MySQL.export.binariesInHex"), false);
         showViews = CommonUtils.getBoolean(store.getString("MySQL.export.showViews"), false);
+        extraCommandArgs = store.getString("MySQL.export.extraArgs");
     }
 
     @Override
@@ -129,10 +131,18 @@ class MySQLExportWizard extends AbstractImportExportWizard<MySQLDatabaseExportIn
         UIUtils.showMessageBox(
             getShell(),
             MySQLMessages.tools_db_export_wizard_title,
-            NLS.bind(MySQLMessages.tools_db_export_wizard_message_export_completed, getObjectsName()),
+            CommonUtils.truncateString(NLS.bind(MySQLMessages.tools_db_export_wizard_message_export_completed, getObjectsName()), 255),
             SWT.ICON_INFORMATION);
         UIUtils.launchProgram(outputFolder.getAbsolutePath());
 	}
+
+    public String getExtraCommandArgs() {
+        return extraCommandArgs;
+    }
+
+    public void setExtraCommandArgs(String extraCommandArgs) {
+        this.extraCommandArgs = extraCommandArgs;
+    }
 
     @Override
     public void fillProcessParameters(List<String> cmd, MySQLDatabaseExportInfo arg) throws IOException
@@ -168,6 +178,10 @@ class MySQLExportWizard extends AbstractImportExportWizard<MySQLDatabaseExportIn
         }
         if (dumpEvents) cmd.add("--events"); //$NON-NLS-1$
         if (comments) cmd.add("--comments"); //$NON-NLS-1$
+	    
+        if (!CommonUtils.isEmptyTrimmed(extraCommandArgs)) {
+            cmd.add(extraCommandArgs);
+        }
     }
 
     @Override
@@ -192,6 +206,7 @@ class MySQLExportWizard extends AbstractImportExportWizard<MySQLDatabaseExportIn
         store.setValue("MySQL.export.removeDefiner", removeDefiner);
         store.setValue("MySQL.export.binariesInHex", binariesInHex);
         store.setValue("MySQL.export.showViews", showViews);
+        store.setValue("MySQL.export.extraArgs", extraCommandArgs);
 
         return super.performFinish();
     }

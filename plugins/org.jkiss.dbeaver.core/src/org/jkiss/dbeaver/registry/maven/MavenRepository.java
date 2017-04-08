@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.registry.maven;
 
@@ -21,16 +20,19 @@ import org.eclipse.core.runtime.IConfigurationElement;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.core.DBeaverActivator;
+import org.jkiss.dbeaver.model.access.DBAAuthInfo;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.registry.RegistryConstants;
+import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -52,51 +54,131 @@ public class MavenRepository
         EXTERNAL    // POM-defined repository
     }
 
-    private final String id;
-    private final String name;
-    private final String url;
+    private String id;
     private final RepositoryType type;
-    private final String scope;
+    private String name;
+    private String url;
+    private final List<String> scopes = new ArrayList<>();
+    private int order;
+    private boolean enabled = true;
+    private String description;
+    private final DBAAuthInfo authInfo = new DBAAuthInfo();
 
     private Map<String, MavenArtifact> cachedArtifacts = new LinkedHashMap<>();
 
     public MavenRepository(IConfigurationElement config)
     {
-        this(
-            config.getAttribute(RegistryConstants.ATTR_ID),
-            config.getAttribute(RegistryConstants.ATTR_NAME),
-            config.getAttribute(RegistryConstants.ATTR_URL),
-            config.getAttribute(RegistryConstants.ATTR_SCOPE),
-            RepositoryType.GLOBAL);
+        this.id = config.getAttribute(RegistryConstants.ATTR_ID);
+        this.order = CommonUtils.toInt(config.getAttribute(RegistryConstants.ATTR_ORDER));
+        this.name = CommonUtils.toString(config.getAttribute(RegistryConstants.ATTR_NAME), this.id);
+        String urlString = config.getAttribute(RegistryConstants.ATTR_URL);
+        if (!urlString.endsWith("/")) urlString += "/";
+        this.url = urlString;
+        this.type = RepositoryType.GLOBAL;
+
+        for (IConfigurationElement scope : config.getChildren("scope")) {
+            final String group = scope.getAttribute("group");
+            if (!CommonUtils.isEmpty(group)) {
+                scopes.add(group);
+            }
+        }
     }
 
-    public MavenRepository(String id, String name, String url, String scope, RepositoryType type) {
+    public MavenRepository(String id, String name, String url, RepositoryType type) {
         this.id = id;
+        this.type = type;
         this.name = CommonUtils.isEmpty(name) ? id : name;
         if (!url.endsWith("/")) url += "/";
         this.url = url;
-        this.scope = scope;
-        this.type = type;
+    }
+
+    // Copy constructor
+    public MavenRepository(MavenRepository source) {
+        this.id = source.id;
+        this.type = source.type;
+        this.name = source.name;
+        this.url = source.url;
+        this.scopes.addAll(source.scopes);
+
+        this.order = source.order;
+        this.enabled = source.enabled;
+        this.description = source.description;
+        this.authInfo.setUserName(source.authInfo.getUserName());
+        this.authInfo.setUserPassword(source.authInfo.getUserPassword());
     }
 
     public String getId() {
         return id;
     }
 
+    public void setId(String id) {
+        this.id = id;
+    }
+
     public String getName() {
         return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getUrl() {
         return url;
     }
 
-    public String getScope() {
-        return scope;
+    public void setUrl(String url) {
+        this.url = url;
+    }
+
+    @NotNull
+    public List<String> getScopes() {
+        return scopes;
+    }
+
+    public void setScopes(List<String> scopes) {
+        this.scopes.clear();
+        this.scopes.addAll(scopes);
     }
 
     public RepositoryType getType() {
         return type;
+    }
+
+    public int getOrder() {
+        return order;
+    }
+
+    public void setOrder(int order) {
+        this.order = order;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    @NotNull
+    public DBAAuthInfo getAuthInfo() {
+        return authInfo;
+    }
+
+    public boolean isSecureRepository() {
+        if (type == RepositoryType.LOCAL || type == RepositoryType.CUSTOM) {
+            return true;
+        }
+        return url.startsWith("https");
     }
 
     @Nullable
@@ -140,7 +222,8 @@ public class MavenRepository
                 extPath = id;
                 break;
         }
-        File homeFolder = new File(DBeaverActivator.getInstance().getStateLocation().toFile(), "maven/" + extPath);
+        File homeFolder = new File(DriverDescriptor.getCustomDriversHome(), "maven/" + extPath);
+        //File homeFolder = new File(DBeaverActivator.getInstance().getStateLocation().toFile(), "maven/" + extPath);
         if (!homeFolder.exists()) {
             if (!homeFolder.mkdirs()) {
                 log.warn("Can't create maven repository '" + name + "' cache folder '" + homeFolder + "'");

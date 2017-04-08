@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.runtime.sql;
 
@@ -22,6 +21,7 @@ import org.eclipse.jface.dialogs.StatusDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.*;
+import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.sql.SQLQueryParameter;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
@@ -30,10 +30,8 @@ import org.jkiss.dbeaver.ui.controls.CustomTableEditor;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 
-import java.util.HashMap;
+import java.util.*;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 
 /**
  * Parameter binding
@@ -43,6 +41,7 @@ public class SQLQueryParameterBindDialog extends StatusDialog {
     private static final String DIALOG_ID = "DBeaver.SQLQueryParameterBindDialog";//$NON-NLS-1$
 
     private List<SQLQueryParameter> parameters;
+    private final Map<String, List<SQLQueryParameter>> dupParameters = new HashMap<>();
 
     private static Map<String, SQLQueryParameterRegistry.ParameterInfo> savedParamValues = new HashMap<>();
 
@@ -54,7 +53,7 @@ public class SQLQueryParameterBindDialog extends StatusDialog {
         // Restore saved values from registry
         SQLQueryParameterRegistry registry = SQLQueryParameterRegistry.getInstance();
         for (SQLQueryParameter param : this.parameters) {
-            if (param.isNamed()) {
+            if (param.isNamed() && param.getValue() == null) {
                 SQLQueryParameterRegistry.ParameterInfo paramInfo = registry.getParameter(param.getName());
                 if (paramInfo != null) {
                     param.setValue(paramInfo.value);
@@ -82,7 +81,7 @@ public class SQLQueryParameterBindDialog extends StatusDialog {
         getShell().setText("Bind parameter(s)");
         final Composite composite = (Composite)super.createDialogArea(parent);
 
-        Table paramTable = new Table(composite, SWT.SINGLE | SWT.FULL_SELECTION | SWT.BORDER | SWT.H_SCROLL | SWT.V_SCROLL);
+        final Table paramTable = new Table(composite, SWT.SINGLE | SWT.FULL_SELECTION | SWT.BORDER | SWT.H_SCROLL | SWT.V_SCROLL);
         final GridData gd = new GridData(GridData.FILL_BOTH);
         gd.widthHint = 400;
         gd.heightHint = 200;
@@ -100,6 +99,12 @@ public class SQLQueryParameterBindDialog extends StatusDialog {
         for (SQLQueryParameter param : parameters) {
             if (param.getPrevious() != null) {
                 // Skip duplicates
+                List<SQLQueryParameter> dups = dupParameters.get(param.getName());
+                if (dups == null) {
+                    dups = new ArrayList<>();
+                    dupParameters.put(param.getName(), dups);
+                }
+                dups.add(param);
                 continue;
             }
             TableItem item = new TableItem(paramTable, SWT.NONE);
@@ -133,10 +138,15 @@ public class SQLQueryParameterBindDialog extends StatusDialog {
                 String newValue = ((Text) control).getText();
                 item.setText(2, newValue);
 
-                if (newValue.isEmpty()) {
-                    newValue = null;
-                }
                 param.setValue(newValue);
+                if (param.isNamed()) {
+                    final List<SQLQueryParameter> dups = dupParameters.get(param.getName());
+                    if (dups != null) {
+                        for (SQLQueryParameter dup : dups) {
+                            dup.setValue(newValue);
+                        }
+                    }
+                }
 
                 savedParamValues.put(
                     param.getName().toUpperCase(Locale.ENGLISH),
@@ -145,8 +155,13 @@ public class SQLQueryParameterBindDialog extends StatusDialog {
         };
 
         if (!parameters.isEmpty()) {
-            paramTable.select(0);
-            tableEditor.showEditor(paramTable.getItem(0), 2);
+            DBeaverUI.asyncExec(new Runnable() {
+                @Override
+                public void run() {
+                    paramTable.select(0);
+                    tableEditor.showEditor(paramTable.getItem(0), 2);
+                }
+            });
         }
 
         updateStatus(GeneralUtils.makeInfoStatus("Use Tab to switch. String values must be quoted. You can use expressions in values"));

@@ -1,41 +1,41 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.actions;
 
 import org.eclipse.core.expressions.PropertyTester;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.commands.ICommandService;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreCommands;
-import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.core.DBeaverUI;
-import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.model.DBPContextProvider;
+import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBUtils;
+import org.jkiss.dbeaver.model.IDataSourceContainerProvider;
 import org.jkiss.dbeaver.model.exec.*;
 import org.jkiss.dbeaver.model.qm.QMUtils;
-import org.jkiss.dbeaver.model.qm.meta.QMMSessionInfo;
-import org.jkiss.dbeaver.model.qm.meta.QMMStatementExecuteInfo;
-import org.jkiss.dbeaver.model.qm.meta.QMMTransactionInfo;
-import org.jkiss.dbeaver.model.qm.meta.QMMTransactionSavepointInfo;
 import org.jkiss.dbeaver.runtime.IPluginService;
 import org.jkiss.dbeaver.runtime.qm.DefaultExecutionHandler;
 import org.jkiss.dbeaver.ui.ActionUtils;
+import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
 
 /**
  * DatabaseEditorPropertyTester
@@ -61,7 +61,7 @@ public class DataSourcePropertyTester extends PropertyTester
             case PROP_CONNECTED:
                 boolean isConnected;
                 if (context != null) {
-                    isConnected = context.isConnected();
+                    isConnected = context.getDataSource().getContainer().isConnected();
                 } else if (receiver instanceof IDataSourceContainerProvider) {
                     DBPDataSourceContainer container = ((IDataSourceContainerProvider) receiver).getDataSourceContainer();
                     isConnected = container != null && container.isConnected();
@@ -86,17 +86,8 @@ public class DataSourcePropertyTester extends PropertyTester
                 }
             case PROP_TRANSACTION_ACTIVE:
                 if (context != null && context.isConnected()) {
-                    QMMSessionInfo session = DBeaverCore.getInstance().getQueryManager().getMetaCollector().getSessionInfo(context);
-                    QMMTransactionInfo transaction = session.getTransaction();
-                    if (transaction != null) {
-                        QMMTransactionSavepointInfo savepoint = transaction.getCurrentSavepoint();
-                        if (savepoint != null) {
-                            QMMStatementExecuteInfo execute = savepoint.getLastExecute();
-                            if (execute != null) {
-                                return Boolean.TRUE.equals(expectedValue);
-                            }
-                        }
-                    }
+                    boolean active = QMUtils.isTransactionActive(context);
+                    return Boolean.valueOf(active).equals(expectedValue);
                 }
                 return Boolean.FALSE.equals(expectedValue);
         }
@@ -159,18 +150,40 @@ public class DataSourcePropertyTester extends PropertyTester
         public synchronized void handleTransactionCommit(@NotNull DBCExecutionContext context)
         {
             DataSourcePropertyTester.firePropertyChange(DataSourcePropertyTester.PROP_TRANSACTION_ACTIVE);
+            updateEditorsDirtyFlag();
         }
 
         @Override
         public synchronized void handleTransactionRollback(@NotNull DBCExecutionContext context, DBCSavepoint savepoint)
         {
             DataSourcePropertyTester.firePropertyChange(DataSourcePropertyTester.PROP_TRANSACTION_ACTIVE);
+            updateEditorsDirtyFlag();
         }
 
         @Override
         public synchronized void handleStatementExecuteBegin(@NotNull DBCStatement statement)
         {
             DataSourcePropertyTester.firePropertyChange(DataSourcePropertyTester.PROP_TRANSACTION_ACTIVE);
+        }
+    }
+
+    /**
+     * This is a hack.
+     * Editors should listen txn commit/rollback and update their dirty flag (active transaction makes SQL editor dirty).
+     * Making each editor QM listener is too expensive.
+     */
+    private static void updateEditorsDirtyFlag() {
+        IEditorReference[] editors = DBeaverUI.getActiveWorkbenchWindow().getActivePage().getEditorReferences();
+        for (IEditorReference ref : editors) {
+            final IEditorPart editor = ref.getEditor(false);
+            if (editor instanceof SQLEditor) {
+                DBeaverUI.asyncExec(new Runnable() {
+                    @Override
+                    public void run() {
+                        ((SQLEditor) editor).updateDirtyFlag();
+                    }
+                });
+            }
         }
     }
 

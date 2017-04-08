@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.properties;
 
@@ -221,7 +220,7 @@ public class PropertyTreeViewer extends TreeViewer {
         }
 
         disposeOldEditor();
-        UIUtils.packColumns(getTree(), true, new float[]{0.1f, 0.9f});
+        UIUtils.packColumns(getTree(), true, new float[]{0.5f, 0.5f});
     }
 
     private Map<String, TreeNode> loadTreeNodes(@Nullable DBRProgressMonitor monitor, TreeNode parent, DBPPropertySource propertySource)
@@ -329,9 +328,8 @@ public class PropertyTreeViewer extends TreeViewer {
         // Make an editor
         final Tree treeControl = super.getTree();
         treeEditor = new TreeEditor(treeControl);
-        treeEditor.horizontalAlignment = SWT.RIGHT;
+        treeEditor.horizontalAlignment = SWT.CENTER;
         treeEditor.verticalAlignment = SWT.CENTER;
-        treeEditor.grabHorizontal = true;
         treeEditor.minimumWidth = 50;
 
         treeControl.addSelectionListener(new SelectionListener() {
@@ -458,6 +456,11 @@ public class PropertyTreeViewer extends TreeViewer {
                         }
                     }
                 });
+                treeEditor.verticalAlignment = cellEditor.getLayoutData().verticalAlignment;
+                treeEditor.horizontalAlignment = cellEditor.getLayoutData().horizontalAlignment;
+                treeEditor.minimumWidth = cellEditor.getLayoutData().minimumWidth;
+                treeEditor.grabHorizontal = cellEditor.getLayoutData().grabHorizontal;
+
                 treeEditor.setEditor(editorControl, item, 1);
             }
             if (isDef) {
@@ -548,6 +551,13 @@ public class PropertyTreeViewer extends TreeViewer {
     protected void contributeContextMenu(IMenuManager manager, Object node, String category, DBPPropertyDescriptor property)
     {
 
+    }
+
+    public DBPPropertyDescriptor getPropertyFromElement(Object element) {
+        if (element instanceof TreeNode) {
+            return ((TreeNode) element).property;
+        }
+        return null;
     }
 
     private Object getPropertyValue(TreeNode prop)
@@ -755,6 +765,9 @@ public class PropertyTreeViewer extends TreeViewer {
                         str.append("]");
                         return str.toString();
                     }
+                    if (propertyValue instanceof Boolean) {
+                        return "";
+                    }
                     return ObjectViewerRenderer.getCellString(propertyValue, isName);
                 } else {
                     return ""; //$NON-NLS-1$
@@ -766,14 +779,19 @@ public class PropertyTreeViewer extends TreeViewer {
         public String getToolTipText(Object obj)
         {
             if (!(obj instanceof TreeNode)) {
-                return ""; //$NON-NLS-1$
+                return null; //$NON-NLS-1$
             }
             TreeNode node = (TreeNode) obj;
+            String toolTip;
             if (node.category != null) {
-                return node.category;
+                toolTip = node.category;
             } else {
-                return isName ? node.property.getDescription() : getText(obj, 1);
+                toolTip = isName ? node.property.getDescription() : getText(obj, 1);
             }
+            if (CommonUtils.isEmpty(toolTip)) {
+                return null;
+            }
+            return toolTip;
         }
 
         @Override
@@ -829,7 +847,7 @@ public class PropertyTreeViewer extends TreeViewer {
                 tree.setSortColumn(column);
                 tree.setSortDirection(sortDirection);
 
-                PropertyTreeViewer.this.setSorter(new ViewerSorter(collator) {
+                PropertyTreeViewer.this.setComparator(new ViewerComparator(collator) {
                     @Override
                     public int compare(Viewer viewer, Object e1, Object e2)
                     {
@@ -898,7 +916,7 @@ public class PropertyTreeViewer extends TreeViewer {
                         }
                         final TreeNode node = (TreeNode) event.item.getData();
                         if (node != null && node.property != null) {
-                            renderer.paintCell(event, node, event.index, node.isEditable());
+                            renderer.paintCell(event, node, event.item, event.index, node.isEditable());
                         }
                     }
                     break;

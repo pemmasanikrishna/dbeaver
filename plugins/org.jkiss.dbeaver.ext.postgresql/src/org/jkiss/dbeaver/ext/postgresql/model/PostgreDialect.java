@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.model;
 
@@ -21,13 +20,15 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.data.PostgreBinaryFormatter;
-import org.jkiss.dbeaver.model.DBPKeywordType;
 import org.jkiss.dbeaver.model.data.DBDBinaryFormatter;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCDatabaseMetaData;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCSQLDialect;
+import org.jkiss.dbeaver.model.impl.sql.BasicSQLDialect;
+import org.jkiss.dbeaver.model.sql.SQLConstants;
+import org.jkiss.dbeaver.model.sql.SQLDialect;
+import org.jkiss.utils.ArrayUtils;
 
-import java.util.Arrays;
 import java.util.Collections;
 
 /**
@@ -35,15 +36,27 @@ import java.util.Collections;
 */
 class PostgreDialect extends JDBCSQLDialect {
 
-    public PostgreDialect(JDBCDatabaseMetaData metaData) {
-        super("PostgreSQL", metaData);
+    public static final String[] POSTGRE_NON_TRANSACTIONAL_KEYWORDS = ArrayUtils.concatArrays(
+        BasicSQLDialect.NON_TRANSACTIONAL_KEYWORDS,
+        new String[]{
+            "SHOW", "SET"
+        }
+    );
+
+    public PostgreDialect() {
+        super("PostgreSQL");
+    }
+
+    public void initDriverSettings(JDBCDataSource dataSource, JDBCDatabaseMetaData metaData) {
+        super.initDriverSettings(dataSource, metaData);
+
         addSQLKeyword("SHOW");
         addSQLKeyword("TYPE");
         addSQLKeyword("USER");
         addSQLKeyword("COMMENT");
         addSQLKeyword("MATERIALIZED");
 
-        addFunctions(Collections.singleton("current_database"));
+        addFunctions(Collections.singleton("CURRENT_DATABASE"));
 
         removeSQLKeyword("PUBLIC");
         removeSQLKeyword("LENGTH");
@@ -58,10 +71,25 @@ class PostgreDialect extends JDBCSQLDialect {
     }
 */
 
+    @Override
+    public int getCatalogUsage() {
+        return SQLDialect.USAGE_NONE;
+    }
+
+    @Override
+    public int getSchemaUsage() {
+        return SQLDialect.USAGE_ALL;
+    }
+
     @Nullable
     @Override
     public String getBlockToggleString() {
-        return "$$";
+        return "$" + SQLConstants.KEYWORD_PATTERN_CHARS + "$";
+    }
+
+    @Override
+    public String[][] getBlockBoundStrings() {
+        return null;
     }
 
     @Override
@@ -84,5 +112,11 @@ class PostgreDialect extends JDBCSQLDialect {
     protected void loadDataTypesFromDatabase(JDBCDataSource dataSource) {
         super.loadDataTypesFromDatabase(dataSource);
         addDataTypes(PostgreConstants.DATA_TYPE_ALIASES.keySet());
+    }
+
+    @NotNull
+    @Override
+    protected String[] getNonTransactionKeywords() {
+        return POSTGRE_NON_TRANSACTIONAL_KEYWORDS;
     }
 }

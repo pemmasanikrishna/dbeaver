@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql;
 
@@ -52,7 +51,7 @@ import org.jkiss.dbeaver.ui.editors.sql.indent.SQLCommentAutoIndentStrategy;
 import org.jkiss.dbeaver.ui.editors.sql.indent.SQLStringAutoIndentStrategy;
 import org.jkiss.dbeaver.ui.editors.sql.syntax.*;
 import org.jkiss.dbeaver.ui.editors.sql.util.SQLAnnotationHover;
-import org.jkiss.dbeaver.ui.editors.sql.util.SQLInformationProvider;
+import org.jkiss.dbeaver.ui.editors.sql.syntax.SQLInformationProvider;
 import org.jkiss.utils.ArrayUtils;
 
 
@@ -261,7 +260,6 @@ public class SQLEditorSourceViewerConfiguration extends TextSourceViewerConfigur
     @Override
     public IPresentationReconciler getPresentationReconciler(ISourceViewer sourceViewer)
     {
-
         // Create a presentation reconciler to handle handle document changes.
         PresentationReconciler reconciler = new PresentationReconciler();
         String docPartitioning = getConfiguredDocumentPartitioning(sourceViewer);
@@ -276,33 +274,26 @@ public class SQLEditorSourceViewerConfiguration extends TextSourceViewerConfigur
         // rule for multiline comments
         // We just need a scanner that does nothing but returns a token with
         // the corresponding text attributes
-        dr = new DefaultDamagerRepairer(new SingleTokenScanner(
-            new TextAttribute(ruleManager.getColor(SQLConstants.CONFIG_COLOR_COMMENT))));
-        reconciler.setDamager(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_MULTILINE_COMMENT);
-        reconciler.setRepairer(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_MULTILINE_COMMENT);
-
+        addContentTypeDamageRepairer(reconciler, SQLPartitionScanner.CONTENT_TYPE_SQL_MULTILINE_COMMENT, SQLConstants.CONFIG_COLOR_COMMENT);
         // Add a "damager-repairer" for changes within one-line SQL comments.
-        dr = new DefaultDamagerRepairer(new SingleTokenScanner(
-            new TextAttribute(ruleManager.getColor(SQLConstants.CONFIG_COLOR_COMMENT))));
-        reconciler.setDamager(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_COMMENT);
-        reconciler.setRepairer(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_COMMENT);
-
+        addContentTypeDamageRepairer(reconciler, SQLPartitionScanner.CONTENT_TYPE_SQL_COMMENT, SQLConstants.CONFIG_COLOR_COMMENT);
         // Add a "damager-repairer" for changes within quoted literals.
-        dr = new DefaultDamagerRepairer(
-            new SingleTokenScanner(
-                new TextAttribute(ruleManager.getColor(SQLConstants.CONFIG_COLOR_STRING))));
-        reconciler.setDamager(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_STRING);
-        reconciler.setRepairer(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_STRING);
-
+        addContentTypeDamageRepairer(reconciler, SQLPartitionScanner.CONTENT_TYPE_SQL_STRING, SQLConstants.CONFIG_COLOR_STRING);
         // Add a "damager-repairer" for changes within quoted literals.
-        dr = new DefaultDamagerRepairer(
-            new SingleTokenScanner(
-                new TextAttribute(ruleManager.getColor(SQLConstants.CONFIG_COLOR_DATATYPE))));
-        reconciler.setDamager(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_QUOTED);
-        reconciler.setRepairer(dr, SQLPartitionScanner.CONTENT_TYPE_SQL_QUOTED);
+        addContentTypeDamageRepairer(reconciler, SQLPartitionScanner.CONTENT_TYPE_SQL_QUOTED, SQLConstants.CONFIG_COLOR_DATATYPE);
 
         return reconciler;
     }
+
+    private void addContentTypeDamageRepairer(PresentationReconciler reconciler, String contentType, String colorId) {
+        DefaultDamagerRepairer dr = new DefaultDamagerRepairer(
+            new SingleTokenScanner(
+                new TextAttribute(ruleManager.getColor(colorId))));
+        reconciler.setDamager(dr, contentType);
+        reconciler.setRepairer(dr, contentType);
+
+    }
+
 
     /**
      * Returns the SQLEditor associated with this object.

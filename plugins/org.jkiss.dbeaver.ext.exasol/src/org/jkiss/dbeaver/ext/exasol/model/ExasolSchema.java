@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
  * Copyright (C) 2016-2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.exasol.model;
 
@@ -31,13 +30,13 @@ import org.jkiss.dbeaver.ext.exasol.model.cache.ExasolTableCache;
 import org.jkiss.dbeaver.ext.exasol.model.cache.ExasolTableForeignKeyCache;
 import org.jkiss.dbeaver.ext.exasol.model.cache.ExasolTableUniqueKeyCache;
 import org.jkiss.dbeaver.ext.exasol.model.cache.ExasolViewCache;
+import org.jkiss.dbeaver.ext.exasol.tools.ExasolJDBCObjectSimpleCacheLiterals;
 import org.jkiss.dbeaver.ext.exasol.tools.ExasolUtils;
 import org.jkiss.dbeaver.model.DBPRefreshableObject;
 import org.jkiss.dbeaver.model.DBPScriptObject;
 import org.jkiss.dbeaver.model.DBPSystemObject;
 import org.jkiss.dbeaver.model.impl.DBSObjectCache;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectSimpleCache;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -56,7 +55,8 @@ public class ExasolSchema extends ExasolGlobalObject implements DBSSchema, DBPRe
 
 
     // ExasolSchema's children
-    private DBSObjectCache<ExasolSchema, ExasolScript> scriptCache;
+    public final DBSObjectCache<ExasolSchema, ExasolScript> scriptCache;
+    public final DBSObjectCache<ExasolSchema, ExasolFunction> functionCache;
     private ExasolViewCache viewCache = new ExasolViewCache();
     private ExasolTableCache tableCache = new ExasolTableCache();
 
@@ -67,13 +67,28 @@ public class ExasolSchema extends ExasolGlobalObject implements DBSSchema, DBPRe
     public ExasolSchema(ExasolDataSource exasolDataSource, String name) {
         super(exasolDataSource, true);
         this.name = name;
-        this.scriptCache = new JDBCObjectSimpleCache<>(
+        this.scriptCache = new ExasolJDBCObjectSimpleCacheLiterals<>(
         		ExasolScript.class,
         		"select "
         		+ "script_name,script_owner,script_language,script_type,script_result_type,script_text,script_comment,b.created "
         		+ "from EXA_ALL_SCRIPTS a inner join EXA_ALL_OBJECTS b "
-        		+ "on a.script_name = b.object_name and a.script_schema = b.root_name where a.script_schema = ? order by script_name",
+        		+ "on a.script_name = b.object_name and a.script_schema = b.root_name where a.script_schema = '%s' order by script_name",
         		name);
+        
+        this.functionCache = new ExasolJDBCObjectSimpleCacheLiterals<>(ExasolFunction.class,
+                "SELECT\n" + 
+                "    F.*,\n" + 
+                "    O.CREATED\n" + 
+                "FROM\n" + 
+                "    SYS.EXA_ALL_FUNCTIONS F\n" + 
+                "INNER JOIN SYS.EXA_ALL_OBJECTS O ON\n" + 
+                "    F.FUNCTION_SCHEMA = O.ROOT_NAME\n" + 
+                "    AND F.FUNCTION_NAME = O.OBJECT_NAME\n" + 
+                "WHERE\n" + 
+                "    F.FUNCTION_SCHEMA = '%s'\n" + 
+                "ORDER BY\n" + 
+                "    FUNCTION_NAME\n", 
+                name);
 
     }
 
@@ -180,16 +195,27 @@ public class ExasolSchema extends ExasolGlobalObject implements DBSSchema, DBPRe
 
         return scriptCache.getAllObjects(monitor, this);
     }
-
+    
+    
     @Override
     public ExasolScript getProcedure(DBRProgressMonitor monitor, String uniqueName) throws DBException {
 
         return scriptCache.getObject(monitor, this, uniqueName);
     }
 
+    public Collection<ExasolFunction> getFunctions(DBRProgressMonitor monitor) throws DBException {
+        return functionCache.getAllObjects(monitor, this);
+    }
+    
+    public ExasolFunction getFunction(DBRProgressMonitor monitor,String name) throws DBException {
+        return functionCache.getObject(monitor, this, name);
+    }
+
+    
     @Override
     public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
 
+        functionCache.clearCache();
         scriptCache.clearCache();
         tableCache.clearCache();
         viewCache.clearCache();
@@ -247,6 +273,11 @@ public class ExasolSchema extends ExasolGlobalObject implements DBSSchema, DBPRe
 			throws DBException
 	{
 		return ExasolUtils.generateDDLforSchema(monitor, this);
+	}
+	
+	public Boolean isPhysicalSchema()
+	{
+	    return true;
 	}
 
 

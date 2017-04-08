@@ -2,20 +2,19 @@
 <?eclipse version="3.2"?>
 <!--
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
   -->
 
 <plugin>
@@ -269,6 +268,8 @@
                     <property name="fullyMaterializeLobData" value="true"/>
                     <property name="fullyMaterializeInputStreams" value="true"/>
                     <property name="progressiveStreaming" value="2"/>
+                    <property name="retrieveMessagesFromServerOnGetMessage" value="true"/>
+
                     <parameter name="query-get-active-db" value="SELECT CURRENT_SCHEMA FROM SYSIBM.SYSDUMMY1"/>
                     <parameter name="query-set-active-db" value="SET SCHEMA ?"/>
                     <parameter name="meta-model" value="indexed"/>
@@ -289,7 +290,7 @@
                     sampleURL="jdbc:as400://{host};[libraries={database};]"
                     defaultPort=""
                     description="DB2 iSeries/AS 400 driver">
-                    <file type="jar" path="maven:/dk.kewill.thirdpartymavencentral:jt400-full:RELEASE"/>
+                    <file type="jar" path="maven:/net.sf.jt400:jt400:RELEASE"/>
 
                     <parameter name="query-get-active-db" value="SELECT CURRENT_SCHEMA FROM SYSIBM.SYSDUMMY1"/>
                     <parameter name="query-set-active-db" value="SET SCHEMA ?"/>
@@ -420,6 +421,8 @@
                     webURL="http://www.h2database.com/"
                     description="H2 Server">
                     <file type="jar" path="maven:/com.h2database:h2:RELEASE"/>
+                    <parameter name="query-get-active-db" value="SELECT SCHEMA()"/>
+                    <parameter name="query-set-active-db" value="SET SCHEMA = ?"/>
                 </driver>
                 <driver
                     id="h2_embedded"
@@ -432,6 +435,8 @@
                     embedded="true"
                     description="H2 Embedded">
                     <file type="jar" path="maven:/com.h2database:h2:RELEASE"/>
+                    <parameter name="query-get-active-db" value="SELECT SCHEMA()"/>
+                    <parameter name="query-set-active-db" value="SET SCHEMA = ?"/>
                 </driver>
                 <driver
                     id="odbc"
@@ -515,8 +520,8 @@
                     embedded="true"
                     description="HyperSQL DataBase - Embedded Mode">
                     <file type="jar" path="maven:/org.hsqldb:hsqldb:RELEASE"/>
+                    <property name="shutdown" value="true"/>
                     <parameter name="create-url-param" value=";create=true"/>
-                    <parameter name="shutdown-url-param" value=";shutdown=true"/>
                     <parameter name="query-get-active-db" value="SELECT * FROM (VALUES (current_schema))"/>
                     <parameter name="query-set-active-db" value="SET SCHEMA ?"/>
                     <parameter name="active-entity-type" value="schema"/>
@@ -630,7 +635,8 @@
                     class="org.apache.phoenix.jdbc.PhoenixDriver"
                     sampleURL="jdbc:phoenix:{host}"
                     webURL="http://phoenix.apache.org/"
-                    description="Driver for Apache Phoenix HBase Database">
+                    description="Driver for Apache Phoenix HBase Database"
+                    category="Hadoop">
                     <parameter name="omit-type-cache" value="true"/>
                     <file type="jar" path="maven:/org.apache.phoenix:phoenix-core:RELEASE"/>
                 </driver>
@@ -648,6 +654,7 @@
                     <property name="quotechar" value="&quot;"/>
                     <property name="fileExtension" value=".csv"/>
                     <property name="suppressHeaders" value="false"/>
+                    <property name="charset" value="UTF-8"/>
                     <parameter name="supports-stored-code" value="false"/>
                     <!--<file type="jar" path="repo:/drivers/csvjdbc/csvjdbc-1.0-23.jar"/>-->
                     <file type="jar" path="maven:/net.sourceforge.csvjdbc:csvjdbc:RELEASE"/>
@@ -723,11 +730,24 @@
                     id="apache_hive2"
                     label="Apache Hive"
                     class="org.apache.hive.jdbc.HiveDriver"
-                    sampleURL="jdbc:hive2://{host}[:{port}]/{database}"
+                    sampleURL="jdbc:hive2://{host}[:{port}][/{database}]"
                     defaultPort="10000"
                     description="Apache Hive JDBC"
-                    webURL="https://cwiki.apache.org/confluence/display/Hive/Home">
+                    webURL="https://cwiki.apache.org/confluence/display/Hive/Home"
+                    category="Hadoop">
                     <file type="jar" path="maven:/org.apache.hive:hive-jdbc:RELEASE"/>
+                    <file type="jar" path="maven:/org.apache.hadoop:hadoop-core:RELEASE"/>
+                </driver>
+                <driver
+                    id="spark_hive"
+                    label="Spark Hive"
+                    class="org.apache.hive.jdbc.HiveDriver"
+                    sampleURL="jdbc:hive2://{host}[:{port}][/{database}]"
+                    defaultPort="10000"
+                    description="Spark Thrift Server connector"
+                    webURL="https://jaceklaskowski.gitbooks.io/mastering-apache-spark/spark-sql-thrift-server.html"
+                    category="Hadoop">
+                    <file type="jar" path="maven:/org.spark-project.hive:hive-jdbc:RELEASE"/>
                     <file type="jar" path="maven:/org.apache.hadoop:hadoop-core:RELEASE"/>
                 </driver>
                 <driver
@@ -737,8 +757,9 @@
                     sampleURL="jdbc:drill:zk={host}[:{port}][;schema={database}]"
                     defaultPort="2181"
                     description="Apache Drill JDBC"
-                    webURL="https://drill.apache.org/">
-                    <file type="jar" path="maven:/org.apache.drill.exec:drill-jdbc:RELEASE"/>
+                    webURL="https://drill.apache.org/"
+                    category="Hadoop">
+                    <file type="jar" path="maven:/org.apache.drill.exec:drill-jdbc-all:RELEASE"/>
                 </driver>
 
                 <!-- Cloudera -->
@@ -757,13 +778,25 @@
                 <!-- Virtuoso  -->
                 <driver
                     id="virtuoso_opensource"
-                    label="OpenLink Virtuoso"
+                    label="Virtuoso"
                     class="virtuoso.jdbc4.Driver"
                     sampleURL="jdbc:virtuoso://{host}:{port}/DATABASE={database}/CHARSET=UTF-8"
                     defaultPort="1111"
                     description="OpenLink Virtuoso open source driver"
                     webURL="https://github.com/openlink/virtuoso-opensource">
                     <file type="jar" path="https://github.com/openlink/virtuoso-opensource/raw/develop/7/libsrc/JDBCDriverType4/virtjdbc4.jar"/>
+                </driver>
+
+                <!-- Infiniflux -->
+                <driver
+                    id="infiniflux"
+                    label="Infiniflux"
+                    class="iflux.jdbc.driver.IfluxDriver"
+                    sampleURL="jdbc:Iflux://{host}[:{port}]/ifluxdb"
+                    defaultPort="5656"
+                    description="INFINIFLUX standard driver"
+                    webURL="http://infiniflux.com">
+                    <file type="jar" path="http://www.infiniflux.com/dist/iflux.jar"/>
                 </driver>
 
             </drivers>
@@ -793,7 +826,7 @@
                 id="org.jkiss.dbeaver.ext.generic.data.GenericValueHandlerProvider"
                 label="Generic data types provider">
             <datasource id="generic"/>
-            <!-- Date/time value handler - needed to provide native datatime value formatting. Formatting itself provided in drivers configuration. -->
+            <!-- Date/time value handler - needed to provide native datetime value formatting. Formatting itself provided in drivers configuration. -->
             <type kind="DATETIME"/>
         </provider>
     </extension>
@@ -846,7 +879,7 @@
     </extension>
 
     <extension point="org.jkiss.dbeaver.generic.meta">
-        <meta id="indexed">
+        <meta id="indexed" class="org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaModel">
             <object type="catalog">
                 <column id="TABLE_CAT" index="1"/>
             </object>

@@ -1,24 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.oracle.model;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.oracle.model.source.OracleSourceObject;
 import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -44,6 +44,7 @@ import java.util.Collection;
  */
 public class OracleView extends OracleTableBase implements OracleSourceObject
 {
+    private static final Log log = Log.getLog(OracleView.class);
 
     public class AdditionalInfo extends TableAdditionalInfo {
         private String text;
@@ -106,12 +107,6 @@ public class OracleView extends OracleTableBase implements OracleSourceObject
     }
 
     @Override
-    public OracleSchema getSchema()
-    {
-        return getContainer();
-    }
-
-    @Override
     public OracleSourceType getSourceType()
     {
         return OracleSourceType.VIEW;
@@ -171,8 +166,9 @@ public class OracleView extends OracleTableBase implements OracleSourceObject
         }
         String viewText = null;
         try (JDBCSession session = DBUtils.openMetaSession(monitor, getDataSource(), "Load table status")) {
+            boolean isOracle9 = getDataSource().isAtLeastV9();
             try (JDBCPreparedStatement dbStat = session.prepareStatement(
-                "SELECT TEXT,TYPE_TEXT,OID_TEXT,VIEW_TYPE_OWNER,VIEW_TYPE,SUPERVIEW_NAME\n" +
+                "SELECT TEXT,TYPE_TEXT,OID_TEXT,VIEW_TYPE_OWNER,VIEW_TYPE" + (isOracle9 ? ",SUPERVIEW_NAME" : "") + "\n" +
                     "FROM SYS.ALL_VIEWS WHERE OWNER=? AND VIEW_NAME=?")) {
                 dbStat.setString(1, getContainer().getName());
                 dbStat.setString(2, getName());
@@ -184,11 +180,14 @@ public class OracleView extends OracleTableBase implements OracleSourceObject
                         additionalInfo.setOidText(JDBCUtils.safeGetStringTrimmed(dbResult, "OID_TEXT"));
                         additionalInfo.typeOwner = JDBCUtils.safeGetStringTrimmed(dbResult, "VIEW_TYPE_OWNER");
                         additionalInfo.typeName = JDBCUtils.safeGetStringTrimmed(dbResult, "VIEW_TYPE");
-
-                        String superViewName = JDBCUtils.safeGetString(dbResult, "SUPERVIEW_NAME");
-                        if (!CommonUtils.isEmpty(superViewName)) {
-                            additionalInfo.setSuperView(getContainer().getView(monitor, superViewName));
+                        if (isOracle9) {
+                            String superViewName = JDBCUtils.safeGetString(dbResult, "SUPERVIEW_NAME");
+                            if (!CommonUtils.isEmpty(superViewName)) {
+                                additionalInfo.setSuperView(getContainer().getView(monitor, superViewName));
+                            }
                         }
+                    } else {
+                        log.warn("Cannot find view '" + getFullyQualifiedName(DBPEvaluationContext.UI) + "' metadata");
                     }
                     additionalInfo.loaded = true;
                 }
@@ -198,7 +197,19 @@ public class OracleView extends OracleTableBase implements OracleSourceObject
             throw new DBCException(e, getDataSource());
         }
         if (viewText != null) {
-            viewText = "CREATE OR REPLACE VIEW " + getFullyQualifiedName(DBPEvaluationContext.DDL) + " AS\n" + viewText;
+            StringBuilder paramsList = new StringBuilder();
+            Collection<OracleTableColumn> attributes = getAttributes(monitor);
+            if (attributes != null) {
+                paramsList.append("\n(");
+                boolean first = true;
+                for (OracleTableColumn column : attributes) {
+                    if (!first) paramsList.append(",");
+                    paramsList.append(DBUtils.getQuotedIdentifier(column));
+                    first = false;
+                }
+                paramsList.append(")");
+            }
+            viewText = "CREATE OR REPLACE VIEW " + getFullyQualifiedName(DBPEvaluationContext.DDL) + paramsList + "\nAS\n" + viewText;
         }
         additionalInfo.setText(viewText);
     }

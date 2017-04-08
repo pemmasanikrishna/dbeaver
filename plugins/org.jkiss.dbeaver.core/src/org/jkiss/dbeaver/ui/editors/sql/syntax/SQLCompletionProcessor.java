@@ -1,31 +1,26 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql.syntax;
 
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
-import org.eclipse.jface.text.ITextViewer;
-import org.eclipse.jface.text.Position;
-import org.eclipse.jface.text.Region;
-import org.eclipse.jface.text.TextPresentation;
+import org.eclipse.jface.text.*;
 import org.eclipse.jface.text.contentassist.*;
 import org.eclipse.jface.text.templates.Template;
-import org.eclipse.swt.widgets.Display;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
@@ -33,12 +28,15 @@ import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.runtime.AbstractJob;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLConstants;
-import org.jkiss.dbeaver.model.sql.SQLQuery;
+import org.jkiss.dbeaver.model.sql.SQLScriptElement;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.jkiss.dbeaver.model.struct.DBSObjectFilter;
 import org.jkiss.dbeaver.model.struct.DBSObjectReference;
+import org.jkiss.dbeaver.registry.sql.SQLCommandHandlerDescriptor;
+import org.jkiss.dbeaver.registry.sql.SQLCommandsRegistry;
 import org.jkiss.dbeaver.ui.TextUtils;
+import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.editors.sql.SQLEditorBase;
 import org.jkiss.dbeaver.ui.editors.sql.SQLPreferenceConstants;
 import org.jkiss.dbeaver.ui.editors.sql.templates.SQLContext;
@@ -100,8 +98,19 @@ public class SQLCompletionProcessor implements IContentAssistProcessor
             return makeTemplateProposals(viewer, request);
         }
 
-        request.queryType = null;
+        try {
+            String commandPrefix = editor.getSyntaxManager().getControlCommandPrefix();
+            if (request.wordDetector.getStartOffset() >= commandPrefix.length() &&
+                viewer.getDocument().get(request.wordDetector.getStartOffset() - commandPrefix.length(), commandPrefix.length()).equals(commandPrefix))
+            {
+                return makeCommandProposals(request, request.wordPart);
+            }
+        } catch (BadLocationException e) {
+            log.debug(e);
+        }
+
         String searchPrefix = request.wordPart;
+        request.queryType = null;
         {
             final String prevKeyWord = wordDetector.getPrevKeyWord();
             if (!CommonUtils.isEmpty(prevKeyWord)) {
@@ -125,19 +134,12 @@ public class SQLCompletionProcessor implements IContentAssistProcessor
             }
         }
         request.wordPart = searchPrefix;
-        if (request.queryType != null && request.wordPart != null) {
+        if (request.wordPart != null) {
             if (editor.getDataSource() != null) {
                 ProposalSearchJob searchJob = new ProposalSearchJob(request);
                 searchJob.schedule();
-
                 // Wait until job finished
-                Display display = Display.getCurrent();
-                while (!searchJob.finished) {
-                    if (!display.readAndDispatch()) {
-                        display.sleep();
-                    }
-                }
-                display.update();
+                UIUtils.waitJobCompletion(searchJob);
             }
         }
 
@@ -161,7 +163,7 @@ public class SQLCompletionProcessor implements IContentAssistProcessor
                             request,
                             keyWord,
                             keyWord,
-                            keyWord + " (" + keywordType.name() + ")",
+                            keywordType,
                             null,
                             false,
                             null)
@@ -211,6 +213,20 @@ public class SQLCompletionProcessor implements IContentAssistProcessor
         return ArrayUtils.toArray(ICompletionProposal.class, request.proposals);
     }
 
+    private ICompletionProposal[] makeCommandProposals(SQLCompletionAnalyzer.CompletionRequest request, String prefix) {
+        final String controlCommandPrefix = editor.getSyntaxManager().getControlCommandPrefix();
+        if (prefix.startsWith(controlCommandPrefix)) {
+            prefix = prefix.substring(controlCommandPrefix.length());
+        }
+        final List<SQLCommandCompletionProposal> commandProposals = new ArrayList<>();
+        for (SQLCommandHandlerDescriptor command : SQLCommandsRegistry.getInstance().getCommandHandlers()) {
+            if (command.getId().startsWith(prefix)) {
+                commandProposals.add(new SQLCommandCompletionProposal(request, command));
+            }
+        }
+        return commandProposals.toArray(new ICompletionProposal[commandProposals.size()]);
+    }
+
     @NotNull
     private ICompletionProposal[] makeTemplateProposals(ITextViewer viewer, SQLCompletionAnalyzer.CompletionRequest request) {
         String wordPart = request.wordPart.toLowerCase();
@@ -251,13 +267,13 @@ public class SQLCompletionProcessor implements IContentAssistProcessor
     public IContextInformation[] computeContextInformation(
         ITextViewer viewer, int documentOffset)
     {
-        SQLQuery statementInfo = editor.extractQueryAtPos(documentOffset);
-        if (statementInfo == null || CommonUtils.isEmpty(statementInfo.getQuery())) {
+        SQLScriptElement statementInfo = editor.extractQueryAtPos(documentOffset);
+        if (statementInfo == null || CommonUtils.isEmpty(statementInfo.getText())) {
             return null;
         }
 
         IContextInformation[] result = new IContextInformation[1];
-        result[0] = new ContextInformation(statementInfo.getQuery(), statementInfo.getQuery());
+        result[0] = new ContextInformation(statementInfo.getText(), statementInfo.getText());
         return result;
     }
 

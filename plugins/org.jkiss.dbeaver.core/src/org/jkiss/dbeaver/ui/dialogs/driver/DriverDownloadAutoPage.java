@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.driver;
 
@@ -27,14 +26,14 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.*;
-import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.connection.DBPDriverDependencies;
 import org.jkiss.dbeaver.model.connection.DBPDriverLibrary;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.DefaultProgressMonitor;
-import org.jkiss.dbeaver.registry.DataSourceProviderRegistry;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.runtime.RunnableContextDelegate;
+import org.jkiss.dbeaver.ui.UIConfirmation;
+import org.jkiss.dbeaver.ui.UITask;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
@@ -148,24 +147,54 @@ class DriverDownloadAutoPage extends DriverDownloadPage {
         return true;
     }
 
-    private void downloadLibraryFiles(DBRProgressMonitor monitor) throws InterruptedException {
+    private void downloadLibraryFiles(final DBRProgressMonitor monitor) throws InterruptedException {
         if (!getWizard().getDriver().acceptDriverLicenses()) {
             return;
         }
 
+        boolean processUnsecure = false;
         List<DBPDriverDependencies.DependencyNode> nodes = getWizard().getDependencies().getLibraryList();
         for (int i = 0, filesSize = nodes.size(); i < filesSize; ) {
-            DBPDriverLibrary lib = nodes.get(i).library;
+            final DBPDriverLibrary lib = nodes.get(i).library;
+            if (!processUnsecure && !lib.isSecureDownload(monitor)) {
+                boolean process = new UIConfirmation() {
+                    @Override
+                    protected Boolean runTask() {
+                        MessageBox messageBox = new MessageBox(getShell(), SWT.ICON_WARNING | SWT.YES | SWT.NO);
+                        messageBox.setText("Security warning");
+                        messageBox.setMessage(
+                                "Library '" + lib.getDisplayName() + "' wasn't found in secure repositories.\n" +
+                                "Only non-secure version is available: " + lib.getExternalURL(monitor) + ".\n\n" +
+                                "It is not recommended to use non-secure repositories because of possibility of malware infection.\n\n" +
+                                "Are you sure you want to proceed?");
+                        int response = messageBox.open();
+                        return (response == SWT.YES);
+                    }
+                }.execute();
+                if (process) {
+                    processUnsecure = true;
+                } else {
+                    break;
+                }
+            }
             int result = IDialogConstants.OK_ID;
             try {
                 lib.downloadLibraryFile(monitor, getWizard().isForceDownload(), "Download " + (i + 1) + "/" + filesSize);
-            } catch (IOException e) {
+            } catch (final IOException e) {
                 if (lib.getType() == DBPDriverLibrary.FileType.license) {
                     result = IDialogConstants.OK_ID;
                 } else {
-                    DownloadRetry retryConfirm = new DownloadRetry(lib, e);
-                    DBeaverUI.syncExec(retryConfirm);
-                    result = retryConfirm.result;
+                    result = new UITask<Integer>() {
+                        @Override
+                        protected Integer runTask() {
+                            DownloadErrorDialog dialog = new DownloadErrorDialog(
+                                    null,
+                                    lib.getDisplayName(),
+                                    "Driver file download failed.\nDo you want to retry?",
+                                    e);
+                            return dialog.open();
+                        }
+                    }.execute();
                 }
             }
             switch (result) {
@@ -182,39 +211,16 @@ class DriverDownloadAutoPage extends DriverDownloadPage {
         }
 
         getWizard().getDriver().setModified(true);
-        DataSourceProviderRegistry.getInstance().saveDrivers();
-    }
-
-    private class DownloadRetry implements Runnable {
-        private final DBPDriverLibrary file;
-        private final Throwable error;
-        private int result;
-
-        public DownloadRetry(DBPDriverLibrary file, Throwable error)
-        {
-            this.file = file;
-            this.error = error;
-        }
-
-        @Override
-        public void run()
-        {
-            DownloadErrorDialog dialog = new DownloadErrorDialog(
-                null,
-                file.getDisplayName(),
-                "Driver file download failed.\nDo you want to retry?",
-                error);
-            result = dialog.open();
-        }
+        //DataSourceProviderRegistry.getInstance().saveDrivers();
     }
 
     public static class DownloadErrorDialog extends ErrorDialog {
 
-        public DownloadErrorDialog(
-            Shell parentShell,
-            String dialogTitle,
-            String message,
-            Throwable error)
+        DownloadErrorDialog(
+                Shell parentShell,
+                String dialogTitle,
+                String message,
+                Throwable error)
         {
             super(parentShell, dialogTitle, message,
                 GeneralUtils.makeExceptionStatus(error),

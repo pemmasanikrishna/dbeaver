@@ -1,36 +1,39 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.actions.navigator;
 
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
-import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.TreeViewer;
+import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.jkiss.dbeaver.core.DBeaverCore;
+import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.DBPDataSourceFolder;
 import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
-import org.jkiss.dbeaver.model.navigator.*;
-import org.jkiss.dbeaver.registry.DataSourceRegistry;
+import org.jkiss.dbeaver.model.navigator.DBNDataSource;
+import org.jkiss.dbeaver.model.navigator.DBNLocalFolder;
+import org.jkiss.dbeaver.model.navigator.DBNModel;
+import org.jkiss.dbeaver.model.navigator.DBNProjectDatabases;
 import org.jkiss.dbeaver.ui.dialogs.EnterNameDialog;
+import org.jkiss.dbeaver.ui.navigator.database.NavigatorViewBase;
 import org.jkiss.utils.CommonUtils;
 
 import java.util.ArrayList;
@@ -43,6 +46,7 @@ public class NavigatorHandlerLocalFolderCreate extends AbstractHandler {
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException
     {
+        final IWorkbenchPart activePart = HandlerUtil.getActivePart(event);
         final ISelection selection = HandlerUtil.getCurrentSelection(event);
 
         if (selection instanceof IStructuredSelection) {
@@ -58,19 +62,19 @@ public class NavigatorHandlerLocalFolderCreate extends AbstractHandler {
                 }
                 if (element instanceof DBNLocalFolder) {
                     parentFolder = (DBNLocalFolder) element;
-                    databasesNode = (DBNProjectDatabases) parentFolder.getParentNode();
+                    databasesNode = parentFolder.getParentNode();
                 } else if (element instanceof DBNProjectDatabases) {
                     databasesNode = (DBNProjectDatabases) element;
                 }
             }
             if (databasesNode != null) {
-                createFolder(HandlerUtil.getActiveWorkbenchWindow(event), databasesNode, parentFolder, dataSources, null);
+                createFolder(HandlerUtil.getActiveWorkbenchWindow(event), activePart, databasesNode, parentFolder, dataSources, null);
             }
         }
         return null;
     }
 
-    public static boolean createFolder(IWorkbenchWindow workbenchWindow, DBNProjectDatabases databases, DBNLocalFolder parentFolder, final Collection<DBNDataSource> nodes, String newName)
+    public static boolean createFolder(IWorkbenchWindow workbenchWindow, IWorkbenchPart activePart, DBNProjectDatabases databases, final DBNLocalFolder parentFolder, final Collection<DBNDataSource> nodes, String newName)
     {
         if (newName == null) {
             newName = EnterNameDialog.chooseName(workbenchWindow.getShell(), "Folder name");
@@ -84,6 +88,17 @@ public class NavigatorHandlerLocalFolderCreate extends AbstractHandler {
         DBPDataSourceFolder folder = dsRegistry.addFolder(parentFolder == null ? null : parentFolder.getFolder(), newName);
         for (DBNDataSource node : nodes) {
             node.setFolder(folder);
+        }
+        if (parentFolder != null && activePart instanceof NavigatorViewBase) {
+            final TreeViewer viewer = ((NavigatorViewBase) activePart).getNavigatorViewer();
+            if (viewer != null) {
+                DBeaverUI.asyncExec(new Runnable() {
+                    @Override
+                    public void run() {
+                        viewer.expandToLevel(parentFolder, 1);
+                    }
+                });
+            }
         }
         DBNModel.updateConfigAndRefreshDatabases(databases);
 

@@ -9,12 +9,12 @@
     <packaging>pom</packaging>
 
     <properties>
-        <dbeaver-version>3.8.2</dbeaver-version>
+        <dbeaver-version>4.0.4</dbeaver-version>
         <dbeaver-product>DBeaver</dbeaver-product>
         <tycho-version>0.26.0</tycho-version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <eclipse-p2-repo.url>http://download.eclipse.org/releases/mars/</eclipse-p2-repo.url>
-        <!--<eclipse-p2-repo.url>http://download.eclipse.org/releases/neon/</eclipse-p2-repo.url>-->
+        <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
+        <eclipse-p2-repo.url>http://download.eclipse.org/releases/neon/</eclipse-p2-repo.url>
         <local-p2-repo.url>http://dbeaver.jkiss.org/eclipse-repo</local-p2-repo.url>
         <!--<local-p2-repo.url>file:///C:/temp/eclipse-repo/</local-p2-repo.url>-->
     </properties>
@@ -29,10 +29,12 @@
         <module>plugins/org.jkiss.dbeaver.ext.db2</module>
         <module>plugins/org.jkiss.dbeaver.ext.derby</module>
         <module>plugins/org.jkiss.dbeaver.ext.erd</module>
+		<module>plugins/org.jkiss.dbeaver.ext.ui.locks</module>
         <module>plugins/org.jkiss.dbeaver.ext.firebird</module>
         <module>plugins/org.jkiss.dbeaver.ext.generic</module>
         <module>plugins/org.jkiss.dbeaver.ext.import-config</module>
         <module>plugins/org.jkiss.dbeaver.ext.h2</module>
+        <module>plugins/org.jkiss.dbeaver.ext.hsqldb</module>
         <module>plugins/org.jkiss.dbeaver.ext.informix</module>
         <module>plugins/org.jkiss.dbeaver.ext.mssql</module>
         <module>plugins/org.jkiss.dbeaver.ext.mysql</module>
@@ -40,6 +42,7 @@
         <module>plugins/org.jkiss.dbeaver.ext.oracle</module>
         <module>plugins/org.jkiss.dbeaver.ext.phoenix</module>
         <module>plugins/org.jkiss.dbeaver.ext.postgresql</module>
+        <module>plugins/org.jkiss.dbeaver.ext.sqlite</module>
         <module>plugins/org.jkiss.dbeaver.ext.vertica</module>
         <module>plugins/org.jkiss.dbeaver.ext.teradata</module>
         <module>plugins/org.jkiss.dbeaver.ext.exasol</module>
@@ -114,8 +117,7 @@
                         <environment>
                             <os>solaris</os>
                             <ws>gtk</ws>
-                            <arch>x86</arch>
-                            <!--<arch>x86_64</arch>-->
+                            <arch>x86_64</arch>
                         </environment>
                     </environments>
                 </configuration>
@@ -135,6 +137,24 @@
                 <configuration>
                     <source>1.7</source>
                     <target>1.7</target>
+                    <compilerArgument>-warn:+discouraged,forbidden</compilerArgument>
+                </configuration>
+            </plugin>
+
+            <!-- Set Built-By info -->
+            <plugin>
+                <groupId>org.eclipse.tycho</groupId>
+                <artifactId>tycho-packaging-plugin</artifactId>
+                <version>${tycho-version}</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Built-By>jkiss.org</Built-By>
+                            <Created-By>jkiss.org</Created-By>
+                            <Build-Time>${maven.build.timestamp}</Build-Time>
+                        </manifestEntries>
+                        <addMavenDescriptor>false</addMavenDescriptor>
+                    </archive>
                 </configuration>
             </plugin>
 

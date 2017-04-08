@@ -1,23 +1,26 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls;
 
-import org.eclipse.jface.viewers.*;
+import org.eclipse.jface.resource.JFaceColors;
+import org.eclipse.jface.viewers.AbstractTreeViewer;
+import org.eclipse.jface.viewers.ColumnViewer;
+import org.eclipse.jface.viewers.TableViewer;
+import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.MouseAdapter;
 import org.eclipse.swt.events.MouseEvent;
@@ -32,8 +35,6 @@ import org.jkiss.dbeaver.ui.ImageUtils;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 
-import java.text.Collator;
-
 /**
  * ObjectListControl
  */
@@ -46,8 +47,6 @@ public abstract class ObjectViewerRenderer {
     private transient int selectedColumn = -1;
 
     private ColumnViewer itemsViewer;
-
-    private SortListener sortListener;
 
     private final TextLayout linkLayout;
     //private final Color linkColor;
@@ -73,18 +72,11 @@ public abstract class ObjectViewerRenderer {
 
         itemsViewer.getControl().addMouseTrackListener(mouseListener);
         itemsViewer.getControl().addMouseMoveListener(mouseListener);
-
-        sortListener = new SortListener();
     }
 
     public boolean isTree()
     {
         return isTree;
-    }
-
-    public SortListener getSortListener()
-    {
-        return sortListener;
     }
 
     private TableItem detectTableItem(int x, int y)
@@ -167,25 +159,26 @@ public abstract class ObjectViewerRenderer {
     //////////////////////////////////////////////////////
     // List sorter
 
-    public void paintCell(Event event, Object element, int columnIndex, boolean editable) {
+    public void paintCell(Event event, Object element, Widget item, int columnIndex, boolean editable) {
         Object cellValue = getCellValue(element, columnIndex);
         if (cellValue != null ) {
             GC gc = event.gc;
             if (cellValue instanceof Boolean) {
-                //int columnWidth = event.width;
-                int columnHeight = isTree ? getTree().getItemHeight() : getTable().getItemHeight();
-                Image image = (Boolean)cellValue ?
-                    ImageUtils.getImageCheckboxEnabledOn() : ImageUtils.getImageCheckboxEnabledOff();
-                    //(editable ? ImageUtils.getImageCheckboxEnabledOn() : ImageUtils.getImageCheckboxDisabledOn()) :
-                    //(editable ? ImageUtils.getImageCheckboxEnabledOff() : ImageUtils.getImageCheckboxDisabledOff());
+                Image image = editable ?
+                    ((Boolean)cellValue ? ImageUtils.getImageCheckboxEnabledOn() : ImageUtils.getImageCheckboxEnabledOff()) :
+                    ((Boolean)cellValue ? ImageUtils.getImageCheckboxDisabledOn() : ImageUtils.getImageCheckboxDisabledOff());
                 final Rectangle imageBounds = image.getBounds();
-                gc.drawImage(image, event.x + 4 /*+ (columnWidth - imageBounds.width) / 2*/, event.y + 2);
+
+                int columnWidth = isTree ? ((TreeItem)item).getBounds(columnIndex).width : ((TableItem)item).getBounds(columnIndex).width;
+
+                gc.drawImage(image, event.x + (columnWidth - imageBounds.width) / 2, event.y + 2);
+                //gc.drawImage(image, event.x + 2, event.y + 2);
                 event.doit = false;
-//                            System.out.println("PAINT " + cellValue + " " + System.currentTimeMillis());
+
             } else if (isHyperlink(cellValue)) {
                 // Print link
                 boolean isSelected = gc.getBackground().equals(selectionBackgroundColor);
-                prepareLinkStyle(cellValue, isSelected ? gc.getForeground() : null);
+                prepareLinkStyle(cellValue, isSelected ? gc.getForeground() : JFaceColors.getHyperlinkText(event.item.getDisplay()));
                 Rectangle textBounds;
                 if (event.item instanceof TreeItem) {
                     textBounds = ((TreeItem) event.item).getTextBounds(event.index);
@@ -194,56 +187,6 @@ public abstract class ObjectViewerRenderer {
                 }
                 linkLayout.draw(gc, textBounds.x, textBounds.y + 1);
             }
-        }
-    }
-
-    //////////////////////////////////////////////////////
-    // List sorter
-
-    private class SortListener implements Listener
-    {
-        int sortDirection = SWT.UP;
-        Item prevColumn = null;
-
-        @Override
-        public void handleEvent(Event e) {
-            Collator collator = Collator.getInstance();
-            Item column = (Item)e.widget;
-            final int colIndex = isTree ? getTree().indexOf((TreeColumn) column) : getTable().indexOf((TableColumn)column );
-            if (prevColumn == column) {
-                // Set reverse order
-                sortDirection = sortDirection == SWT.UP ? SWT.DOWN : SWT.UP;
-            }
-            prevColumn = column;
-            if (isTree) {
-                getTree().setSortColumn((TreeColumn) column);
-                getTree().setSortDirection(sortDirection);
-            } else {
-                getTable().setSortColumn((TableColumn) column);
-                getTable().setSortDirection(sortDirection);
-            }
-
-            itemsViewer.setSorter(new ViewerSorter(collator) {
-                @Override
-                public int compare(Viewer viewer, Object e1, Object e2)
-                {
-                    int result;
-                    Object value1 = getCellValue(e1, colIndex);
-                    Object value2 = getCellValue(e2, colIndex);
-                    if (value1 == null && value2 == null) {
-                        result = 0;
-                    } else if (value1 == null) {
-                        result = -1;
-                    } else if (value2 == null) {
-                        result = 1;
-                    } else if (value1 instanceof Comparable && value1.getClass() == value2.getClass()) {
-                        result = ((Comparable)value1).compareTo(value2);
-                    } else {
-                        result = value1.toString().compareToIgnoreCase(value2.toString());
-                    }
-                    return sortDirection == SWT.UP ? result : -result;
-                }
-            });
         }
     }
 
@@ -322,8 +265,6 @@ public abstract class ObjectViewerRenderer {
     {
         if (value == null) {
             return "";
-        } else if (value instanceof Boolean) {
-            value = "";//DBUtils.getBooleanString((Boolean) value);
         } else {
             if (!nameColumn && value instanceof DBPNamedValueObject) {
                 value = ((DBPNamedValueObject) value).getObjectValue();

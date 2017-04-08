@@ -1,28 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.navigator;
 
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.jface.action.*;
-import org.eclipse.jface.viewers.ISelection;
-import org.eclipse.jface.viewers.ISelectionProvider;
-import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.viewers.Viewer;
+import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.dnd.*;
 import org.eclipse.swt.events.DisposeEvent;
 import org.eclipse.swt.events.DisposeListener;
@@ -43,9 +39,9 @@ import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreCommands;
 import org.jkiss.dbeaver.core.DBeaverCore;
-import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.navigator.*;
+import org.jkiss.dbeaver.model.navigator.meta.DBXTreeNodeHandler;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
@@ -56,10 +52,10 @@ import org.jkiss.dbeaver.model.struct.DBSWrapper;
 import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.IActionConstants;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.controls.ViewerColumnController;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorActionSetActiveObject;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerObjectOpen;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerRefresh;
+import org.jkiss.dbeaver.ui.controls.ViewerColumnController;
 import org.jkiss.dbeaver.ui.dnd.DatabaseObjectTransfer;
 import org.jkiss.dbeaver.ui.dnd.TreeNodeTransfer;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorView;
@@ -156,7 +152,7 @@ public class NavigatorUtils {
         }
     }
 
-    public static MenuManager createContextMenu(final IWorkbenchSite workbenchSite, final Viewer viewer, IMenuListener menuListener)
+    public static MenuManager createContextMenu(final IWorkbenchSite workbenchSite, final Viewer viewer, final IMenuListener menuListener)
     {
         final Control control = viewer.getControl();
         final MenuManager menuMgr = new MenuManager();
@@ -174,13 +170,14 @@ public class NavigatorUtils {
                 Menu m = (Menu)e.widget;
                 DBNNode node = getSelectedNode(viewer.getSelection());
                 if (node != null && !node.isLocked() && node.allowsOpen()) {
+                    String commandID = NavigatorUtils.getNodeActionCommand(DBXTreeNodeHandler.Action.open, node, CoreCommands.CMD_OBJECT_OPEN);
                     // Dirty hack
                     // Get contribution item from menu item and check it's ID
                     for (MenuItem item : m.getItems()) {
                         Object itemData = item.getData();
                         if (itemData instanceof IContributionItem) {
                             String contribId = ((IContributionItem)itemData).getId();
-                            if (contribId != null && contribId.equals(CoreCommands.CMD_OBJECT_OPEN)) {
+                            if (contribId != null && contribId.equals(commandID)) {
                                 m.setDefaultItem(item);
                             }
                         }
@@ -198,18 +195,12 @@ public class NavigatorUtils {
                     manager.add(new Separator());
                     return;
                 }
-                // Fill context menu
-                final IStructuredSelection selection = (IStructuredSelection)viewer.getSelection();
-
-                final DBNNode selectedNode = getSelectedNode(viewer);
-                if (selectedNode == null || selectedNode.isLocked()) {
-                    //manager.
-                    return;
-                }
 
                 manager.add(new GroupMarker(MB_NAVIGATOR_ADDITIONS));
 
-                if (workbenchSite != null) {
+                final IStructuredSelection selection = (IStructuredSelection)viewer.getSelection();
+                final DBNNode selectedNode = getSelectedNode(viewer);
+                if (selectedNode != null && !selectedNode.isLocked() && workbenchSite != null) {
                     // Add "Set active object" menu
                     if (selectedNode.isPersisted() && selectedNode instanceof DBNDatabaseNode && !(selectedNode instanceof DBNDatabaseFolder) && ((DBNDatabaseNode)selectedNode).getObject() != null) {
                         final DBSObjectSelector activeContainer = DBUtils.getParentAdapter(
@@ -221,6 +212,7 @@ public class NavigatorUtils {
                                 DBNDatabaseNode databaseNode = (DBNDatabaseNode)selectedNode;
                                 if (databaseNode.getObject() != null && (activeChild == null || activeChild.getClass() == databaseNode.getObject().getClass())) {
                                     String text = "Set Active ";// + databaseNode.getNodeType();
+                                    // Fill context menu
                                     IAction action = ActionUtils.makeAction(new NavigatorActionSetActiveObject(), workbenchSite, selection, text, null, null);
 
                                     manager.add(action);
@@ -228,37 +220,30 @@ public class NavigatorUtils {
                             }
                         }
                     }
-                }
 
-                manager.add(new Separator());
+                    manager.add(new Separator());
 
-                manager.add(new GroupMarker(IWorkbenchActionConstants.MB_ADDITIONS));
-                manager.add(new GroupMarker(IActionConstants.MB_ADDITIONS_END));
+                    manager.add(new GroupMarker(IWorkbenchActionConstants.MB_ADDITIONS));
+                    manager.add(new GroupMarker(IActionConstants.MB_ADDITIONS_END));
 
-                IServiceLocator serviceLocator;
-                if (workbenchSite != null) {
-                    serviceLocator = workbenchSite;
-                } else {
-                    serviceLocator = DBeaverUI.getActiveWorkbenchWindow();
-                }
-                // Add properties button
-                if (PreferencesUtil.hasPropertiesContributors(selection.getFirstElement())) {
-                    //propertyDialogAction.selectionChanged(selection);
-                    //manager.add(propertyDialogAction);
-                    manager.add(ActionUtils.makeCommandContribution(serviceLocator, IWorkbenchCommandConstants.FILE_PROPERTIES));
-                }
+                    // Add properties button
+                    if (PreferencesUtil.hasPropertiesContributors(selection.getFirstElement())) {
+                        manager.add(ActionUtils.makeCommandContribution(workbenchSite, IWorkbenchCommandConstants.FILE_PROPERTIES));
+                    }
 
-                if (selectedNode.isPersisted()) {
-                    // Add refresh button
-                    manager.add(ActionUtils.makeCommandContribution(serviceLocator, IWorkbenchCommandConstants.FILE_REFRESH));
+                    if (selectedNode.isPersisted()) {
+                        // Add refresh button
+                        manager.add(ActionUtils.makeCommandContribution(workbenchSite, IWorkbenchCommandConstants.FILE_REFRESH));
+                    }
                 }
 
                 manager.add(new GroupMarker(CoreCommands.GROUP_TOOLS));
+
+                if (menuListener != null) {
+                    menuListener.menuAboutToShow(manager);
+                }
             }
         });
-        if (menuListener != null) {
-            menuMgr.addMenuListener(menuListener);
-        }
 
         menuMgr.setRemoveAllWhenShown(true);
         control.setMenu(menu);
@@ -269,6 +254,31 @@ public class NavigatorUtils {
             }
         });
         return menuMgr;
+    }
+
+    public static void executeNodeAction(DBXTreeNodeHandler.Action action, Object node, IServiceLocator serviceLocator) {
+        String defCommandId = null;
+        if (action == DBXTreeNodeHandler.Action.open) {
+            defCommandId = CoreCommands.CMD_OBJECT_OPEN;
+        }
+        String actionCommand = getNodeActionCommand(action, node, defCommandId);
+        if (actionCommand != null) {
+            ActionUtils.runCommand(actionCommand, new StructuredSelection(node), serviceLocator);
+        } else {
+            // do nothing
+            // TODO: implement some other behavior
+        }
+
+    }
+
+    public static String getNodeActionCommand(DBXTreeNodeHandler.Action action, Object node, String defCommand) {
+        if (node instanceof DBNDatabaseNode) {
+            DBXTreeNodeHandler handler = ((DBNDatabaseNode) node).getMeta().getHandler(action);
+            if (handler != null && handler.getPerform() == DBXTreeNodeHandler.Perform.command && !CommonUtils.isEmpty(handler.getCommand())) {
+                return handler.getCommand();
+            }
+        }
+        return defCommand;
     }
 
     public static void addDragAndDropSupport(final Viewer viewer)
@@ -301,7 +311,7 @@ public class NavigatorUtils {
                         }
                         nodes.add((DBNNode)nextSelected);
                         String nodeName;
-                        if (nextSelected instanceof DBNDatabaseNode) {
+                        if (nextSelected instanceof DBNDatabaseNode && !(nextSelected instanceof DBNDataSource)) {
                             DBSObject object = ((DBNDatabaseNode)nextSelected).getObject();
                             if (object == null) {
                                 continue;

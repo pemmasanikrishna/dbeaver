@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.driver;
 
@@ -24,6 +23,7 @@ import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.*;
+import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.*;
@@ -44,7 +44,7 @@ import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.IHelpContextIds;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.controls.CImageCombo;
+import org.jkiss.dbeaver.ui.controls.CSmartCombo;
 import org.jkiss.dbeaver.ui.dialogs.HelpEnabledDialog;
 import org.jkiss.dbeaver.ui.dialogs.StandardErrorDialog;
 import org.jkiss.dbeaver.ui.dialogs.connection.ClientHomesPanel;
@@ -178,24 +178,34 @@ public class DriverEditDialog extends HelpEnabledDialog {
             });
 
             UIUtils.createControlLabel(propsGroup, "Driver Type");
-            final CImageCombo providerCombo = new CImageCombo(propsGroup, SWT.BORDER | SWT.READ_ONLY | SWT.DROP_DOWN);
+            final CSmartCombo<DataSourceProviderDescriptor> providerCombo = new CSmartCombo<>(propsGroup, SWT.BORDER | SWT.READ_ONLY | SWT.DROP_DOWN, new LabelProvider() {
+                @Override
+                public Image getImage(Object element) {
+                    return DBeaverIcons.getImage(((DataSourceProviderDescriptor) element).getIcon());
+                }
+
+                @Override
+                public String getText(Object element) {
+                    return ((DataSourceProviderDescriptor) element).getName();
+                }
+            });
             providerCombo.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
             if (newDriver) {
-                for (DataSourceProviderDescriptor p : DataSourceProviderRegistry.getInstance().getDataSourceProviders()) {
-                    if (p.isDriversManagable()) {
-                        providerCombo.add(DBeaverIcons.getImage(p.getIcon()), p.getName(), null, p);
+                for (DataSourceProviderDescriptor provider : DataSourceProviderRegistry.getInstance().getDataSourceProviders()) {
+                    if (provider.isDriversManagable()) {
+                        providerCombo.addItem(provider);
                     }
                 }
                 providerCombo.select(provider);
                 providerCombo.addSelectionListener(new SelectionAdapter() {
                     @Override
                     public void widgetSelected(SelectionEvent e) {
-                        provider = (DataSourceProviderDescriptor) providerCombo.getItem(providerCombo.getSelectionIndex()).getData();
+                        provider = providerCombo.getItem(providerCombo.getSelectionIndex());
                         driver = provider.createDriver();
                     }
                 });
             } else {
-                providerCombo.add(DBeaverIcons.getImage(provider.getIcon()), provider.getName(), null, provider);
+                providerCombo.addItem(provider);
                 providerCombo.select(provider);
             }
 
@@ -244,8 +254,8 @@ public class DriverEditDialog extends HelpEnabledDialog {
                 driverCategoryCombo.setEnabled(false);
             }
             Set<String> categories = new TreeSet<>();
-            for (DataSourceProviderDescriptor p : DataSourceProviderRegistry.getInstance().getDataSourceProviders()) {
-                for (DriverDescriptor drv : p.getEnabledDrivers()) {
+            for (DataSourceProviderDescriptor provider : DataSourceProviderRegistry.getInstance().getDataSourceProviders()) {
+                for (DriverDescriptor drv : provider.getEnabledDrivers()) {
                     if (!CommonUtils.isEmpty(drv.getCategory())) {
                         categories.add(drv.getCategory());
                     }

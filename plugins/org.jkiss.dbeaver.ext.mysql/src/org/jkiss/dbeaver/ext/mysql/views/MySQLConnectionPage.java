@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.mysql.views;
 
@@ -81,9 +80,10 @@ public class MySQLConnectionPage extends ConnectionPageAbstract implements IComp
                 }
             }
         };
+        final int fontHeight = UIUtils.getFontHeight(composite);
 
-        Composite addrGroup = UIUtils.createPlaceholder(composite, 4);
-        GridLayout gl = new GridLayout(4, false);
+        Composite addrGroup = UIUtils.createPlaceholder(composite, 2);
+        GridLayout gl = new GridLayout(2, false);
         addrGroup.setLayout(gl);
         GridData gd = new GridData(GridData.FILL_BOTH);
         addrGroup.setLayoutData(gd);
@@ -92,18 +92,15 @@ public class MySQLConnectionPage extends ConnectionPageAbstract implements IComp
         hostLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
 
         hostText = new Text(addrGroup, SWT.BORDER);
-        gd = new GridData(GridData.FILL_HORIZONTAL);
-        gd.grabExcessHorizontalSpace = true;
-        hostText.setLayoutData(gd);
+        hostText.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
         hostText.addModifyListener(textListener);
 
         Label portLabel = UIUtils.createControlLabel(addrGroup, MySQLMessages.dialog_connection_port);
-        gd = new GridData(GridData.HORIZONTAL_ALIGN_END);
-        portLabel.setLayoutData(gd);
+        portLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
 
         portText = new Text(addrGroup, SWT.BORDER);
-        gd = new GridData(GridData.VERTICAL_ALIGN_BEGINNING);
-        gd.widthHint = 40;
+        gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
+        gd.widthHint = fontHeight * 10;
         portText.setLayoutData(gd);
         portText.addVerifyListener(UIUtils.getIntegerVerifyListener(Locale.getDefault()));
         portText.addModifyListener(textListener);
@@ -112,18 +109,15 @@ public class MySQLConnectionPage extends ConnectionPageAbstract implements IComp
         dbLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
 
         dbText = new Text(addrGroup, SWT.BORDER);
-        gd = new GridData(GridData.FILL_HORIZONTAL);
-        gd.grabExcessHorizontalSpace = true;
-        gd.horizontalSpan = 3;
-        dbText.setLayoutData(gd);
+        dbText.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
         dbText.addModifyListener(textListener);
 
         Label usernameLabel = UIUtils.createControlLabel(addrGroup, MySQLMessages.dialog_connection_user_name);
         usernameLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
 
         usernameText = new Text(addrGroup, SWT.BORDER);
-        gd = new GridData(GridData.FILL_HORIZONTAL);
-        gd.grabExcessHorizontalSpace = true;
+        gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
+        gd.widthHint = fontHeight * 20;
         usernameText.setLayoutData(gd);
         usernameText.addModifyListener(textListener);
 
@@ -131,20 +125,22 @@ public class MySQLConnectionPage extends ConnectionPageAbstract implements IComp
         passwordLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
 
         passwordText = new Text(addrGroup, SWT.BORDER | SWT.PASSWORD);
-        gd = new GridData(GridData.FILL_HORIZONTAL);
-        gd.grabExcessHorizontalSpace = true;
+        gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
+        gd.widthHint = fontHeight * 20;
         passwordText.setLayoutData(gd);
         passwordText.addModifyListener(textListener);
 
         {
-            Composite buttonsGroup = new Composite(addrGroup, SWT.NONE);
+            Composite clientPanel = UIUtils.createPlaceholder(addrGroup, 1);
             gd = new GridData(GridData.FILL_HORIZONTAL);
             gd.horizontalSpan = 2;
-            buttonsGroup.setLayoutData(gd);
-            buttonsGroup.setLayout(new GridLayout(2, false));
-            homesSelector = new ClientHomesSelector(buttonsGroup, SWT.NONE, "Local Client");
+            clientPanel.setLayoutData(gd);
+
+            UIUtils.createHorizontalLine(clientPanel);
+
+            homesSelector = new ClientHomesSelector(clientPanel, SWT.NONE, "Local Client");
             gd = new GridData(GridData.FILL_HORIZONTAL | GridData.HORIZONTAL_ALIGN_BEGINNING);
-            homesSelector.setLayoutData(gd);
+            homesSelector.getPanel().setLayoutData(gd);
         }
 
         createDriverPanel(addrGroup);

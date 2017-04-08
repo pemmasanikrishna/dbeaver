@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.oracle.model;
 
@@ -22,8 +21,11 @@ import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.data.DBDBinaryFormatter;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCDatabaseMetaData;
 import org.jkiss.dbeaver.model.impl.data.formatters.BinaryFormatterHex;
+import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSource;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCSQLDialect;
+import org.jkiss.dbeaver.model.impl.sql.BasicSQLDialect;
 import org.jkiss.dbeaver.model.sql.SQLConstants;
+import org.jkiss.utils.ArrayUtils;
 
 import java.util.Arrays;
 
@@ -34,18 +36,50 @@ class OracleSQLDialect extends JDBCSQLDialect {
 
     public static final String[] EXEC_KEYWORDS = new String[]{ "call" };
 
+    public static final String[] ORACLE_NON_TRANSACTIONAL_KEYWORDS = ArrayUtils.concatArrays(
+        BasicSQLDialect.NON_TRANSACTIONAL_KEYWORDS,
+        new String[]{
+            "CREATE", "ALTER", "DROP",
+            "ANALYZE", "VALIDATE"}
+    );
+
     public static final String[][] ORACLE_BEGIN_END_BLOCK = new String[][]{
         {SQLConstants.BLOCK_BEGIN, SQLConstants.BLOCK_END},
         {"IF", SQLConstants.BLOCK_END}
     };
 
-    public OracleSQLDialect(JDBCDatabaseMetaData metaData) {
-        super("Oracle", metaData);
-        addSQLKeyword("ANALYZE");
-        addSQLKeyword("VALIDATE");
-        addSQLKeyword("STRUCTURE");
-        addSQLKeyword("COMPUTE");
-        addSQLKeyword("STATISTICS");
+    public static final String[] ADVANCED_KEYWORDS = {
+        "PACKAGE",
+        "FUNCTION",
+        "TYPE",
+        "TRIGGER",
+        "MATERIALIZED",
+        "IF",
+        "EACH",
+        "RETURN",
+        "WRAPPED",
+        "AFTER",
+        "BEFORE",
+        "DATABASE",
+        "ANALYZE",
+        "VALIDATE",
+        "STRUCTURE",
+        "COMPUTE",
+        "STATISTICS",
+        "LOOP",
+        "WHILE",
+        "BULK",
+        "ELSIF",
+        "EXIT",
+    };
+
+    public OracleSQLDialect() {
+        super("Oracle");
+    }
+
+    public void initDriverSettings(JDBCDataSource dataSource, JDBCDatabaseMetaData metaData) {
+        super.initDriverSettings(dataSource, metaData);
+
         addFunctions(
             Arrays.asList(
                 "SUBSTR", "APPROX_COUNT_DISTINCT",
@@ -69,6 +103,11 @@ class OracleSQLDialect extends JDBCSQLDialect {
                 "NLSSORT",
                 "NLS_UPPER",
                 "RPAD",
+                "REVERSE",
+                "SUBSTRB",
+                "SUBSTRC",
+                "SUBSTR2",
+                "SUBSTR4",
 
                 // NLS Character Functions:
                 "NLS_CHARSET_DECL_LEN",
@@ -77,6 +116,11 @@ class OracleSQLDialect extends JDBCSQLDialect {
 
                 //Character Functions Returning Number VALUES:
                 "INSTR",
+                "INSTRB",
+                "INSTRC",
+                "INSTR2",
+                "INSTR4",
+                "LENGTHB",
 
                 //Datetime Functions:
                 "ADD_MONTHS",
@@ -257,6 +301,10 @@ class OracleSQLDialect extends JDBCSQLDialect {
 
             ));
         removeSQLKeyword("SYSTEM");
+
+        for (String kw : ADVANCED_KEYWORDS) {
+            addSQLKeyword(kw);
+        }
     }
 
     @Override
@@ -306,5 +354,11 @@ class OracleSQLDialect extends JDBCSQLDialect {
     @Override
     public String getDualTableName() {
         return "DUAL";
+    }
+
+    @NotNull
+    @Override
+    protected String[] getNonTransactionKeywords() {
+        return ORACLE_NON_TRANSACTIONAL_KEYWORDS;
     }
 }

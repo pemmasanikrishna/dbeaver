@@ -1,32 +1,31 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.runtime.jobs;
 
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
-import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.net.DBWNetworkHandler;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.ui.UIUtils;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,6 +34,8 @@ import java.util.List;
  */
 public class InvalidateJob extends DataSourceJob
 {
+    private static final Log log = Log.getLog(InvalidateJob.class);
+
     public static class ContextInvalidateResult {
         public final DBCExecutionContext.InvalidateResult result;
         public final Exception error;
@@ -42,6 +43,11 @@ public class InvalidateJob extends DataSourceJob
         public ContextInvalidateResult(DBCExecutionContext.InvalidateResult result, Exception error) {
             this.result = result;
             this.error = error;
+        }
+
+        @Override
+        public String toString() {
+            return result.name();
         }
     }
 
@@ -69,9 +75,20 @@ public class InvalidateJob extends DataSourceJob
     protected IStatus run(DBRProgressMonitor monitor)
     {
         DBPDataSource dataSource = getExecutionContext().getDataSource();
+
+        this.invalidateResults = invalidateDataSource(monitor, dataSource, true);
+
+        return Status.OK_STATUS;
+    }
+
+    public static List<ContextInvalidateResult> invalidateDataSource(DBRProgressMonitor monitor, DBPDataSource dataSource, boolean disconnectOnFailure) {
+        long timeSpent = 0;
+        List<ContextInvalidateResult> invalidateResults = new ArrayList<>();
+
         DBPDataSourceContainer container = dataSource.getContainer();
         DBWNetworkHandler[] activeHandlers = container.getActiveNetworkHandlers();
         boolean networkOK = true;
+        boolean hasGoodContexts = false;
         if (activeHandlers != null && activeHandlers.length > 0) {
             for (DBWNetworkHandler nh : activeHandlers) {
                 monitor.subTask("Invalidate network [" + container.getName() + "]");
@@ -91,7 +108,10 @@ public class InvalidateJob extends DataSourceJob
             for (DBCExecutionContext context : allContexts) {
                 long startTime = System.currentTimeMillis();
                 try {
-                    final DBCExecutionContext.InvalidateResult result = context.invalidateContext(monitor);
+                    final DBCExecutionContext.InvalidateResult result = context.invalidateContext(monitor, disconnectOnFailure);
+                    if (result != DBCExecutionContext.InvalidateResult.ERROR) {
+                        hasGoodContexts = true;
+                    }
                     invalidateResults.add(new ContextInvalidateResult(result, null));
                 } catch (Exception e) {
                     invalidateResults.add(new ContextInvalidateResult(DBCExecutionContext.InvalidateResult.ERROR, e));
@@ -100,8 +120,24 @@ public class InvalidateJob extends DataSourceJob
                 }
             }
         }
+        if (!hasGoodContexts && disconnectOnFailure) {
+            // Close whole datasource. Target host seems to be unavailable
+            try {
+                container.disconnect(monitor);
+            } catch (Exception e) {
+                log.error("Error closing unaccessible datasource", e);
+            }
+            StringBuilder msg = new StringBuilder();
+            for (ContextInvalidateResult result : invalidateResults) {
+                if (result.error != null) {
+                    if (msg.length() > 0) msg.append("\n");
+                    msg.append(result.error.getMessage());
+                }
+            }
+            UIUtils.showErrorDialog(null, "Forced disconnect", "Datasource '" + container.getName() + "' was disconnected: destination database unreachable.\n" + msg);
+        }
 
-        return Status.OK_STATUS;
+        return invalidateResults;
     }
 
     @Override

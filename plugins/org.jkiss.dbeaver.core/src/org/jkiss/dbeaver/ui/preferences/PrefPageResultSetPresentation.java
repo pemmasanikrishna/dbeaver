@@ -1,32 +1,35 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.preferences;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.*;
 import org.jkiss.dbeaver.DBeaverPreferences;
+import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.controls.resultset.ValueFormatSelector;
 import org.jkiss.dbeaver.ui.controls.resultset.spreadsheet.Spreadsheet;
 import org.jkiss.dbeaver.utils.PrefUtils;
 import org.jkiss.utils.CommonUtils;
+
+import java.util.Locale;
 
 /**
  * PrefPageResultSetPresentation
@@ -39,8 +42,10 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
     private Button gridShowCellIcons;
     private Combo gridDoubleClickBehavior;
     private Button autoSwitchMode;
+    private Button showDescription;
 
     private Spinner textMaxColumnSize;
+    private ValueFormatSelector textValueFormat;
 
     public PrefPageResultSetPresentation()
     {
@@ -54,10 +59,12 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
         return
             store.contains(DBeaverPreferences.RESULT_SET_SHOW_ODD_ROWS) ||
             store.contains(DBeaverPreferences.RESULT_SET_SHOW_CELL_ICONS) ||
+            store.contains(DBeaverPreferences.RESULT_SET_SHOW_DESCRIPTION) ||
             store.contains(DBeaverPreferences.RESULT_SET_DOUBLE_CLICK) ||
             store.contains(DBeaverPreferences.RESULT_SET_AUTO_SWITCH_MODE) ||
 
-            store.contains(DBeaverPreferences.RESULT_TEXT_MAX_COLUMN_SIZE)
+            store.contains(DBeaverPreferences.RESULT_TEXT_MAX_COLUMN_SIZE) ||
+            store.contains(DBeaverPreferences.RESULT_TEXT_VALUE_FORMAT)
             ;
     }
 
@@ -73,9 +80,10 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
         Composite composite = UIUtils.createPlaceholder(parent, 1, 5);
 
         {
-            Group uiGroup = UIUtils.createControlGroup(composite, "Behavior", 2, SWT.NONE, 0);
+            Group uiGroup = UIUtils.createControlGroup(composite, "Common", 1, SWT.NONE, 0);
 
-            autoSwitchMode = UIUtils.createLabelCheckbox(uiGroup, "Switch to record/grid mode on single/multiple row(s)", false);
+            autoSwitchMode = UIUtils.createCheckbox(uiGroup, "Switch to record/grid mode on single/multiple row(s)", false);
+            showDescription = UIUtils.createCheckbox(uiGroup, "Show column description in header", false);
         }
 
         {
@@ -93,6 +101,7 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
             Group uiGroup = UIUtils.createControlGroup(composite, "Plain text", 2, SWT.NONE, 0);
 
             textMaxColumnSize = UIUtils.createLabelSpinner(uiGroup, "Maximum column length", 0, 10, Integer.MAX_VALUE);
+            textValueFormat = new ValueFormatSelector(uiGroup);
         }
 
         return composite;
@@ -107,8 +116,10 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
             gridDoubleClickBehavior.select(
                 Spreadsheet.DoubleClickBehavior.valueOf(store.getString(DBeaverPreferences.RESULT_SET_DOUBLE_CLICK)).ordinal());
             autoSwitchMode.setSelection(store.getBoolean(DBeaverPreferences.RESULT_SET_AUTO_SWITCH_MODE));
+            showDescription.setSelection(store.getBoolean(DBeaverPreferences.RESULT_SET_SHOW_DESCRIPTION));
 
             textMaxColumnSize.setSelection(store.getInt(DBeaverPreferences.RESULT_TEXT_MAX_COLUMN_SIZE));
+            textValueFormat.select(DBDDisplayFormat.safeValueOf(store.getString(DBeaverPreferences.RESULT_TEXT_VALUE_FORMAT)));
         } catch (Exception e) {
             log.warn(e);
         }
@@ -122,7 +133,9 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
             store.setValue(DBeaverPreferences.RESULT_SET_SHOW_CELL_ICONS, gridShowCellIcons.getSelection());
             store.setValue(DBeaverPreferences.RESULT_SET_DOUBLE_CLICK, CommonUtils.fromOrdinal(Spreadsheet.DoubleClickBehavior.class, gridDoubleClickBehavior.getSelectionIndex()).name());
             store.setValue(DBeaverPreferences.RESULT_SET_AUTO_SWITCH_MODE, autoSwitchMode.getSelection());
+            store.setValue(DBeaverPreferences.RESULT_SET_SHOW_DESCRIPTION, showDescription.getSelection());
             store.setValue(DBeaverPreferences.RESULT_TEXT_MAX_COLUMN_SIZE, textMaxColumnSize.getSelection());
+            store.setValue(DBeaverPreferences.RESULT_TEXT_VALUE_FORMAT, textValueFormat.getSelection().name());
         } catch (Exception e) {
             log.warn(e);
         }
@@ -136,7 +149,9 @@ public class PrefPageResultSetPresentation extends TargetPrefPage
         store.setToDefault(DBeaverPreferences.RESULT_SET_SHOW_CELL_ICONS);
         store.setToDefault(DBeaverPreferences.RESULT_SET_DOUBLE_CLICK);
         store.setToDefault(DBeaverPreferences.RESULT_SET_AUTO_SWITCH_MODE);
+        store.setToDefault(DBeaverPreferences.RESULT_SET_SHOW_DESCRIPTION);
         store.setToDefault(DBeaverPreferences.RESULT_TEXT_MAX_COLUMN_SIZE);
+        store.setToDefault(DBeaverPreferences.RESULT_TEXT_VALUE_FORMAT);
     }
 
     @Override

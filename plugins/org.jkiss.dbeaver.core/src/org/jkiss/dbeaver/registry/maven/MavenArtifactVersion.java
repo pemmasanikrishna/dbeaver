@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.registry.maven;
 
@@ -21,10 +20,10 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.ui.TextUtils;
-import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.dbeaver.runtime.WebUtils;
+import org.jkiss.dbeaver.ui.TextUtils;
 import org.jkiss.dbeaver.utils.GeneralUtils;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.IOUtils;
 import org.jkiss.utils.StandardConstants;
@@ -34,7 +33,6 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import java.io.*;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.*;
@@ -53,6 +51,7 @@ public class MavenArtifactVersion implements IMavenIdentifier {
     private MavenArtifact artifact;
     private String name;
     private String version;
+    private String packaging;
     private String description;
     private String url;
     private MavenArtifactVersion parent;
@@ -132,6 +131,11 @@ public class MavenArtifactVersion implements IMavenIdentifier {
         return MavenArtifactReference.makeId(this);
     }
 
+    @Nullable
+    public String getPackaging() {
+        return packaging;
+    }
+
     public String getDescription() {
         return description;
     }
@@ -198,7 +202,7 @@ public class MavenArtifactVersion implements IMavenIdentifier {
     private File getLocalPOM() {
         if (artifact.getRepository().getType() == MavenRepository.RepositoryType.LOCAL) {
             try {
-                return new File(new URI(getRemotePOMLocation()));
+                return new File(GeneralUtils.makeURIFromFilePath(getRemotePOMLocation()));
             } catch (URISyntaxException e) {
                 log.warn(e);
             }
@@ -217,7 +221,7 @@ public class MavenArtifactVersion implements IMavenIdentifier {
             return;
         }
         String pomURL = getRemotePOMLocation();
-        try (InputStream is = WebUtils.openConnectionStream(pomURL)) {
+        try (InputStream is = WebUtils.openConnection(pomURL, artifact.getRepository().getAuthInfo()).getInputStream()) {
             File folder = localPOM.getParentFile();
             if (!folder.exists() && !folder.mkdirs()) {
                 throw new IOException("Can't create cache folder '" + folder.getAbsolutePath() + "'");
@@ -248,6 +252,7 @@ public class MavenArtifactVersion implements IMavenIdentifier {
         name = XMLUtils.getChildElementBody(root, "name");
         url = XMLUtils.getChildElementBody(root, "url");
         version = XMLUtils.getChildElementBody(root, "version");
+        packaging = XMLUtils.getChildElementBody(root, "packaging");
         description = XMLUtils.getChildElementBody(root, "description");
         if (description != null) {
             description = TextUtils.compactWhiteSpaces(description.trim());
@@ -362,7 +367,6 @@ public class MavenArtifactVersion implements IMavenIdentifier {
                         XMLUtils.getChildElementBody(repElement, "id"),
                         XMLUtils.getChildElementBody(repElement, "name"),
                         XMLUtils.getChildElementBody(repElement, "url"),
-                        null,
                         MavenRepository.RepositoryType.EXTERNAL);
                     String layout = XMLUtils.getChildElementBody(repElement, "layout");
                     if ("legacy".equals(layout)) {

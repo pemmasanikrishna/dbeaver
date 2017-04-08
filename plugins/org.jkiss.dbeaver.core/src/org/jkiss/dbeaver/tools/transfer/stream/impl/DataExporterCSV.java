@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.tools.transfer.stream.impl;
 
@@ -44,8 +43,9 @@ public class DataExporterCSV extends StreamExporterAbstract {
     private static final String PROP_DELIMITER = "delimiter";
     private static final String PROP_HEADER = "header";
     private static final String PROP_QUOTE_CHAR = "quoteChar";
-    public static final char DEF_DELIMITER = ',';
-    public static final String DEF_QUOTE_CHAR = "\"";
+    private static final String PROP_NULL_STRING = "nullString";
+    private static final char DEF_DELIMITER = ',';
+    private static final String DEF_QUOTE_CHAR = "\"";
 
     enum HeaderPosition {
         none,
@@ -53,10 +53,11 @@ public class DataExporterCSV extends StreamExporterAbstract {
         bottom,
         both
     }
-    private char delimiter;
+    private String delimiter;
     private char quoteChar = '"';
     private boolean useQuotes = true;
     private String rowDelimiter;
+    private String nullString;
     private HeaderPosition headerPosition;
     private PrintWriter out;
     private List<DBDAttributeBinding> columns;
@@ -69,24 +70,20 @@ public class DataExporterCSV extends StreamExporterAbstract {
         super.init(site);
         String delimString = String.valueOf(site.getProperties().get(PROP_DELIMITER));
         if (delimString == null || delimString.isEmpty()) {
-            delimiter = DEF_DELIMITER;
-        } else if (delimString.length() == 1) {
-            delimiter = delimString.charAt(0);
-        } else if (delimString.charAt(0) == '\\') {
-            switch (delimString.charAt(1)) {
-                case 't': delimiter = '\t'; break;
-                case 'n': delimiter = '\n'; break;
-                case 'r': delimiter = '\r'; break;
-                default: delimiter = DEF_DELIMITER;
-            }
+            delimiter = String.valueOf(DEF_DELIMITER);
         } else {
-            delimiter = DEF_DELIMITER;
+            delimiter = delimString
+                    .replace("\\t", "\t")
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r");
         }
         Object quoteProp = site.getProperties().get(PROP_QUOTE_CHAR);
         String quoteStr = quoteProp == null ? DEF_QUOTE_CHAR : quoteProp.toString();
         if (!CommonUtils.isEmpty(quoteStr)) {
             quoteChar = quoteStr.charAt(0);
         }
+        Object nullStringProp = site.getProperties().get(PROP_NULL_STRING);
+        nullString = nullStringProp == null ? null : nullStringProp.toString();
         useQuotes = quoteChar != ' ';
         out = site.getWriter();
         rowDelimiter = GeneralUtils.getDefaultLineSeparator();
@@ -135,7 +132,9 @@ public class DataExporterCSV extends StreamExporterAbstract {
         for (int i = 0; i < row.length; i++) {
             DBDAttributeBinding column = columns.get(i);
             if (DBUtils.isNullValue(row[i])) {
-                // just skip it
+                if (!CommonUtils.isEmpty(nullString)) {
+                    out.write(nullString);
+                }
             } else if (row[i] instanceof DBDContent) {
                 // Content
                 // Inline textual content and handle binaries in some special way

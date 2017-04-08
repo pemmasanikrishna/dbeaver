@@ -1,26 +1,28 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.mysql.edit;
 
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.widgets.*;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.mysql.MySQLMessages;
 import org.jkiss.dbeaver.ext.mysql.model.*;
+import org.jkiss.dbeaver.model.DBPDataKind;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.impl.DBObjectNameCaseTransformer;
 import org.jkiss.dbeaver.model.impl.DBSObjectCache;
@@ -28,7 +30,9 @@ import org.jkiss.dbeaver.model.impl.sql.edit.struct.SQLIndexManager;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSEntityAttribute;
 import org.jkiss.dbeaver.model.struct.rdb.DBSIndexType;
+import org.jkiss.dbeaver.model.struct.rdb.DBSTableIndexColumn;
 import org.jkiss.dbeaver.ui.UITask;
+import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.editors.object.struct.EditIndexPage;
 import org.jkiss.utils.CommonUtils;
 
@@ -54,10 +58,7 @@ public class MySQLIndexManager extends SQLIndexManager<MySQLTableIndex, MySQLTab
         return new UITask<MySQLTableIndex>() {
             @Override
             protected MySQLTableIndex runTask() {
-                EditIndexPage editPage = new EditIndexPage(
-                    MySQLMessages.edit_index_manager_title,
-                    parent,
-                    Collections.singletonList(DBSIndexType.OTHER));
+                MyEditIndexPage editPage = new MyEditIndexPage(parent);
                 if (!editPage.edit()) {
                     return null;
                 }
@@ -76,14 +77,15 @@ public class MySQLIndexManager extends SQLIndexManager<MySQLTableIndex, MySQLTab
                     if (colIndex == 1) {
                         idxName.append("_").append(CommonUtils.escapeIdentifier(tableColumn.getName())); //$NON-NLS-1$
                     }
+                    Integer length = (Integer) editPage.getAttributeProperty(tableColumn, MyEditIndexPage.PROP_LENGTH);
                     index.addColumn(
                         new MySQLTableIndexColumn(
                             index,
                             (MySQLTableColumn) tableColumn,
                             colIndex++,
-                            true,
+                            !Boolean.TRUE.equals(editPage.getAttributeProperty(tableColumn, EditIndexPage.PROP_DESC)),
                             false,
-                            null));
+                            length == null ? null : String.valueOf(length)));
                 }
                 idxName.append("_IDX"); //$NON-NLS-1$
                 index.setName(DBObjectNameCaseTransformer.transformObjectName(index, idxName.toString()));
@@ -96,6 +98,75 @@ public class MySQLIndexManager extends SQLIndexManager<MySQLTableIndex, MySQLTab
     protected String getDropIndexPattern(MySQLTableIndex index)
     {
         return "ALTER TABLE " + PATTERN_ITEM_TABLE + " DROP INDEX " + PATTERN_ITEM_INDEX_SHORT; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    protected void appendIndexColumnModifiers(StringBuilder decl, DBSTableIndexColumn indexColumn) {
+        final String subPart = ((MySQLTableIndexColumn) indexColumn).getSubPart();
+        if (!CommonUtils.isEmpty(subPart)) {
+            decl.append(" (").append(subPart).append(")");
+        }
+        if (!indexColumn.isAscending()) {
+            decl.append(" DESC"); //$NON-NLS-1$
+        }
+    }
+
+    private static class MyEditIndexPage extends EditIndexPage {
+
+        public static final String PROP_LENGTH = "length";
+
+        private int lengthColumnIndex;
+
+        public MyEditIndexPage(MySQLTable parent) {
+            super(MySQLMessages.edit_index_manager_title, parent, Collections.singletonList(DBSIndexType.OTHER));
+        }
+
+        @Override
+        protected void createAttributeColumns(Table columnsTable) {
+            super.createAttributeColumns(columnsTable);
+
+            TableColumn colDesc = UIUtils.createTableColumn(columnsTable, SWT.NONE, "Length");
+            colDesc.setToolTipText("Index length (for varchar columns)");
+        }
+
+        @Override
+        protected int fillAttributeColumns(DBSEntityAttribute attribute, AttributeInfo attributeInfo, TableItem columnItem) {
+            lengthColumnIndex = super.fillAttributeColumns(attribute, attributeInfo, columnItem) + 1;
+            Integer length = (Integer) attributeInfo.getProperty(PROP_LENGTH);
+            columnItem.setText(lengthColumnIndex, length == null ? "" : length.toString());
+
+            return lengthColumnIndex;
+        }
+
+        @Override
+        protected Control createCellEditor(Table table, int index, TableItem item, AttributeInfo attributeInfo) {
+            if (index == lengthColumnIndex && attributeInfo.getAttribute().getDataKind() == DBPDataKind.STRING) {
+                Integer length = (Integer) attributeInfo.getProperty(PROP_LENGTH);
+                Spinner spinner = new Spinner(table, SWT.BORDER);
+                spinner.setMinimum(0);
+                spinner.setMaximum((int) attributeInfo.getAttribute().getMaxLength());
+                if (length != null) {
+                    spinner.setSelection(length);
+                }
+                return spinner;
+            }
+            return super.createCellEditor(table, index, item, attributeInfo);
+        }
+
+        @Override
+        protected void saveCellValue(Control control, int index, TableItem item, AttributeInfo attributeInfo) {
+            if (index == lengthColumnIndex) {
+                Spinner spinner = (Spinner) control;
+                int length = spinner.getSelection();
+                item.setText(index, length <= 0 ? "" : String.valueOf(length));
+                if (length <= 0) {
+                    attributeInfo.setProperty(PROP_LENGTH, null);
+                } else {
+                    attributeInfo.setProperty(PROP_LENGTH, length);
+                }
+            } else {
+                super.saveCellValue(control, index, item, attributeInfo);
+            }
+        }
     }
 
 }

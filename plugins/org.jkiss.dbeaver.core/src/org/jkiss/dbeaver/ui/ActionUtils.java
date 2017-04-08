@@ -1,35 +1,36 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui;
 
-import org.eclipse.core.commands.ParameterizedCommand;
-import org.eclipse.jface.bindings.Binding;
-import org.jkiss.dbeaver.Log;
 import org.eclipse.core.commands.Command;
+import org.eclipse.core.commands.ParameterizedCommand;
 import org.eclipse.core.commands.common.NotDefinedException;
+import org.eclipse.core.expressions.EvaluationContext;
+import org.eclipse.core.expressions.IEvaluationContext;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.ActionContributionItem;
 import org.eclipse.jface.action.ContributionItem;
 import org.eclipse.jface.action.IAction;
+import org.eclipse.jface.bindings.Binding;
 import org.eclipse.jface.bindings.TriggerSequence;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.jface.viewers.ISelection;
+import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.*;
 import org.eclipse.ui.commands.ICommandService;
 import org.eclipse.ui.handlers.IHandlerService;
@@ -40,6 +41,7 @@ import org.eclipse.ui.services.IEvaluationService;
 import org.eclipse.ui.services.IServiceLocator;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPImage;
 
 /**
@@ -198,14 +200,44 @@ public class ActionUtils
 
     public static void runCommand(String commandId, IServiceLocator serviceLocator)
     {
+        runCommand(commandId, null, serviceLocator);
+    }
+
+    public static void runCommand(String commandId, ISelection selection, IServiceLocator serviceLocator)
+    {
         if (commandId != null) {
             try {
-                //Command cmd = new Command();
                 ICommandService commandService = serviceLocator.getService(ICommandService.class);
+                IHandlerService handlerService = serviceLocator.getService(IHandlerService.class);
                 if (commandService != null) {
                     Command command = commandService.getCommand(commandId);
-                    if (command != null && command.isEnabled()) {
-                        IHandlerService handlerService = serviceLocator.getService(IHandlerService.class);
+                    boolean needContextPatch = false;
+                    if (selection != null) {
+                        needContextPatch = true;
+                        if (serviceLocator instanceof IWorkbenchSite) {
+                            final ISelection curSelection = ((IWorkbenchSite) serviceLocator).getSelectionProvider().getSelection();
+                            if (curSelection instanceof IStructuredSelection && selection instanceof IStructuredSelection) {
+                                if (((IStructuredSelection) curSelection).size() == ((IStructuredSelection) selection).size() &&
+                                    ((IStructuredSelection) curSelection).getFirstElement() == ((IStructuredSelection) selection).getFirstElement())
+                                {
+                                    // The same selection
+                                    needContextPatch = false;
+                                }
+                            }
+                        }
+                    }
+                    if (selection != null && needContextPatch) {
+                        // Create new eval context
+                        IEvaluationContext context = new EvaluationContext(
+                            handlerService.createContextSnapshot(false), selection);
+                        if (serviceLocator instanceof IWorkbenchPartSite) {
+                            context.addVariable(ISources.ACTIVE_PART_NAME, ((IWorkbenchPartSite) serviceLocator).getPart());
+                        }
+                        context.addVariable(ISources.ACTIVE_CURRENT_SELECTION_NAME, selection);
+
+                        ParameterizedCommand pc = new ParameterizedCommand(command, null);
+                        handlerService.executeCommandInContext(pc, null, context);
+                    } else if (command != null && command.isEnabled()) {
                         handlerService.executeCommand(commandId, null);
                     }
                 }

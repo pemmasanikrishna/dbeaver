@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.oracle.views;
 
@@ -318,7 +317,7 @@ public class OracleConnectionPage extends ConnectionPageAbstract implements ICom
         };
         GridData gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
         gd.widthHint = 300;
-        oraHomeSelector.setLayoutData(gd);
+        oraHomeSelector.getPanel().setLayoutData(gd);
 
         Label ph = new Label(bottomControls, SWT.NONE);
         ph.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
@@ -356,9 +355,9 @@ public class OracleConnectionPage extends ConnectionPageAbstract implements ICom
         // Load values from new connection info
         DBPConnectionConfiguration connectionInfo = site.getActiveDataSource().getConnectionConfiguration();
 
-        final Object sidService = connectionInfo.getProviderProperty(OracleConstants.PROP_SID_SERVICE);
+        final String sidService = connectionInfo.getProviderProperty(OracleConstants.PROP_SID_SERVICE);
         if (sidService != null) {
-            sidServiceCombo.setText(OracleConnectionType.valueOf(sidService.toString()).getTitle());
+            sidServiceCombo.setText(OracleConnectionType.valueOf(sidService).getTitle());
         }
 
         //if (isOCI) {
@@ -375,7 +374,7 @@ public class OracleConnectionPage extends ConnectionPageAbstract implements ICom
             }
         }
 
-        Object conTypeProperty = connectionInfo.getProviderProperty(OracleConstants.PROP_CONNECTION_TYPE);
+        String conTypeProperty = connectionInfo.getProviderProperty(OracleConstants.PROP_CONNECTION_TYPE);
         if (conTypeProperty != null) {
             connectionType = OracleConstants.ConnectionType.valueOf(CommonUtils.toString(conTypeProperty));
         } else {
@@ -398,12 +397,12 @@ public class OracleConnectionPage extends ConnectionPageAbstract implements ICom
                 break;
             case TNS: {
                 tnsNameCombo.setText(CommonUtils.notEmpty(connectionInfo.getDatabaseName()));
-                Object tnsPathProperty = connectionInfo.getProviderProperty(OracleConstants.PROP_TNS_PATH);
+                String tnsPathProperty = connectionInfo.getProviderProperty(OracleConstants.PROP_TNS_PATH);
 //                if (tnsPathProperty == null) {
 //                    tnsPathProperty = System.getenv(OracleConstants.VAR_TNS_ADMIN);
 //                }
                 if (tnsPathProperty != null) {
-                    tnsPathText.setText(tnsPathProperty.toString());
+                    tnsPathText.setText(tnsPathProperty);
                 }
                 break;
             }
@@ -422,9 +421,9 @@ public class OracleConnectionPage extends ConnectionPageAbstract implements ICom
             osAuthCheck.setSelection(false);
         }
 
-        final Object roleName = connectionInfo.getProviderProperty(OracleConstants.PROP_INTERNAL_LOGON);
+        final String roleName = connectionInfo.getProviderProperty(OracleConstants.PROP_INTERNAL_LOGON);
         if (roleName != null) {
-            userRoleCombo.setText(roleName.toString().toUpperCase(Locale.ENGLISH));
+            userRoleCombo.setText(roleName.toUpperCase(Locale.ENGLISH));
         }
     }
 

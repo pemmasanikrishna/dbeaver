@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.tools;
 
@@ -29,8 +28,8 @@ import org.eclipse.swt.widgets.*;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.DBeaverUI;
-import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTableBase;
 import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -58,7 +57,7 @@ class PostgreBackupWizardPageObjects extends PostgreWizardPageSettings<PostgreBa
     private PostgreSchema curSchema;
     private PostgreDataSource dataSource;
 
-    protected PostgreBackupWizardPageObjects(PostgreBackupWizard wizard)
+    PostgreBackupWizardPageObjects(PostgreBackupWizard wizard)
     {
         super(wizard, "Schemas/tables");
         setTitle("Choose objects to export");
@@ -82,44 +81,63 @@ class PostgreBackupWizardPageObjects extends PostgreWizardPageSettings<PostgreBa
         SashForm sash = new CustomSashForm(objectsGroup, SWT.VERTICAL);
         sash.setLayoutData(new GridData(GridData.FILL_BOTH));
 
-        schemasTable = new Table(sash, SWT.BORDER | SWT.CHECK);
-        schemasTable.addListener(SWT.Selection, new Listener() {
-            public void handleEvent(Event event) {
-                TableItem item = (TableItem) event.item;
-                PostgreSchema catalog = (PostgreSchema) item.getData();
-                if (event.detail == SWT.CHECK) {
-                    schemasTable.select(schemasTable.indexOf(item));
-                    checkedObjects.remove(catalog);
-                }
-                loadTables(catalog);
-                updateState();
-            }
-        });
-        GridData gd = new GridData(GridData.FILL_BOTH);
-        gd.heightHint = 50;
-        schemasTable.setLayoutData(gd);
-
-        tablesTable = new Table(sash, SWT.BORDER | SWT.CHECK);
-        gd = new GridData(GridData.FILL_BOTH);
-        gd.heightHint = 50;
-        tablesTable.setLayoutData(gd);
-        tablesTable.addListener(SWT.Selection, new Listener() {
-            public void handleEvent(Event event) {
-                if (event.detail == SWT.CHECK) {
-                    updateCheckedTables();
+        {
+            Composite catPanel = UIUtils.createPlaceholder(sash, 1);
+            catPanel.setLayoutData(new GridData(GridData.FILL_BOTH));
+            schemasTable = new Table(catPanel, SWT.BORDER | SWT.CHECK);
+            schemasTable.addListener(SWT.Selection, new Listener() {
+                public void handleEvent(Event event) {
+                    TableItem item = (TableItem) event.item;
+                    PostgreSchema catalog = (PostgreSchema) item.getData();
+                    if (event.detail == SWT.CHECK) {
+                        schemasTable.select(schemasTable.indexOf(item));
+                        checkedObjects.remove(catalog);
+                    }
+                    loadTables(catalog);
                     updateState();
                 }
-            }
-        });
+            });
+            GridData gd = new GridData(GridData.FILL_BOTH);
+            gd.heightHint = 50;
+            schemasTable.setLayoutData(gd);
 
-        final Button exportViewsCheck = UIUtils.createCheckbox(objectsGroup, "Show views", false);
-        exportViewsCheck.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                wizard.showViews = exportViewsCheck.getSelection();
-                loadTables(null);
-            }
-        });
+            Composite buttonsPanel = UIUtils.createPlaceholder(catPanel, 3, 5);
+            buttonsPanel.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            new Label(buttonsPanel, SWT.NONE).setLayoutData(new GridData(GridData.GRAB_HORIZONTAL));
+            createCheckButtons(buttonsPanel, schemasTable);
+        }
+
+        final Button exportViewsCheck;
+        {
+            Composite tablesPanel = UIUtils.createPlaceholder(sash, 1);
+            tablesPanel.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+            tablesTable = new Table(tablesPanel, SWT.BORDER | SWT.CHECK);
+            GridData gd = new GridData(GridData.FILL_BOTH);
+            gd.heightHint = 50;
+            tablesTable.setLayoutData(gd);
+            tablesTable.addListener(SWT.Selection, new Listener() {
+                public void handleEvent(Event event) {
+                    if (event.detail == SWT.CHECK) {
+                        updateCheckedTables();
+                        updateState();
+                    }
+                }
+            });
+
+            Composite buttonsPanel = UIUtils.createPlaceholder(tablesPanel, 3, 5);
+            buttonsPanel.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            exportViewsCheck = UIUtils.createCheckbox(buttonsPanel, "Show views", false);
+            exportViewsCheck.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    wizard.showViews = exportViewsCheck.getSelection();
+                    loadTables(null);
+                }
+            });
+            exportViewsCheck.setLayoutData(new GridData(GridData.GRAB_HORIZONTAL));
+            createCheckButtons(buttonsPanel, tablesTable);
+        }
 
         dataSource = null;
         Set<PostgreSchema> activeCatalogs = new LinkedHashSet<>();

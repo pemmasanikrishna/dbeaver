@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.registry.editor;
@@ -53,6 +52,7 @@ public class EntityEditorsRegistry implements DBERegistry {
     private List<EntityEditorDescriptor> entityEditors = new ArrayList<EntityEditorDescriptor>();
     private Map<String, List<EntityEditorDescriptor>> positionsMap = new HashMap<String, List<EntityEditorDescriptor>>();
     private List<EntityManagerDescriptor> entityManagers = new ArrayList<EntityManagerDescriptor>();
+    private Map<String, EntityManagerDescriptor> entityManagerMap = new HashMap<>();
 
     public EntityEditorsRegistry(IExtensionRegistry registry)
     {
@@ -75,7 +75,9 @@ public class EntityEditorsRegistry implements DBERegistry {
                 entityManagers.add(descriptor);
             }
         }
-
+        for (EntityManagerDescriptor em : entityManagers) {
+            entityManagerMap.put(em.getObjectType().getImplName(), em);
+        }
     }
 
     public void dispose()
@@ -86,6 +88,7 @@ public class EntityEditorsRegistry implements DBERegistry {
             descriptor.dispose();
         }
         entityManagers.clear();
+        entityManagerMap.clear();
     }
 
     public EntityEditorDescriptor getMainEntityEditor(DBPObject object)
@@ -115,6 +118,12 @@ public class EntityEditorsRegistry implements DBERegistry {
 
     private EntityManagerDescriptor getEntityManager(Class objectType)
     {
+        // 1. Try exact match
+        EntityManagerDescriptor manager = entityManagerMap.get(objectType.getName());
+        if (manager != null) {
+            return manager;
+        }
+        // 2. Find first applicable
         for (EntityManagerDescriptor descriptor : entityManagers) {
             if (descriptor.appliesToType(objectType)) {
                 return descriptor;

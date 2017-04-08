@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls.resultset;
 
@@ -66,7 +65,7 @@ public class ResultSetModel {
     private volatile boolean updateInProgress = false;
 
     // Coloring
-    private Map<DBDAttributeBinding, AttributeColorSettings> colorMapping = new HashMap<>();
+    private Map<DBDAttributeBinding, List<AttributeColorSettings>> colorMapping = new HashMap<>();
 
     private DBCStatistics statistics;
     private DBCTrace trace;
@@ -391,7 +390,7 @@ public class ResultSetModel {
                 log.error("Error getting [" + attr.getName() + "] value", e);
             }
         }
-        if ((value instanceof DBDValue && value == oldValue) || !CommonUtils.equalObjects(oldValue, value)) {
+        if ((value instanceof DBDValue && value == oldValue && ((DBDValue) value).isModified()) || !CommonUtils.equalObjects(oldValue, value)) {
             // If DBDValue was updated (kind of CONTENT?) or actual value was changed
             if (ownerValue == null && DBUtils.isNullValue(oldValue) && DBUtils.isNullValue(value)) {
                 // Both nulls - nothing to update
@@ -592,7 +591,12 @@ public class ResultSetModel {
                 for (DBVColorOverride co : coList) {
                     DBDAttributeBinding binding = getAttributeBinding(entity, co.getAttributeName());
                     if (binding != null) {
-                        colorMapping.put(binding, new AttributeColorSettings(co));
+                        List<AttributeColorSettings> cmList = colorMapping.get(binding);
+                        if (cmList == null) {
+                            cmList = new ArrayList<>();
+                            colorMapping.put(binding, cmList);
+                        }
+                        cmList.add(new AttributeColorSettings(co));
                     }
                 }
             }
@@ -607,14 +611,17 @@ public class ResultSetModel {
                 row.background = null;
             }
         } else {
-            for (Map.Entry<DBDAttributeBinding, AttributeColorSettings> entry : colorMapping.entrySet()) {
+            for (Map.Entry<DBDAttributeBinding, List<AttributeColorSettings>> entry : colorMapping.entrySet()) {
                 for (ResultSetRow row : rows) {
                     final DBDAttributeBinding binding = entry.getKey();
                     final Object cellValue = getCellValue(binding, row);
                     //final String cellStringValue = binding.getValueHandler().getValueDisplayString(binding, cellValue, DBDDisplayFormat.NATIVE);
-                    if (entry.getValue().evaluate(cellValue)) {
-                        row.foreground = entry.getValue().colorForeground;
-                        row.background = entry.getValue().colorBackground;
+                    for (AttributeColorSettings acs : entry.getValue()) {
+                        if (acs.evaluate(cellValue)) {
+                            row.foreground = acs.colorForeground;
+                            row.background = acs.colorBackground;
+                            break;
+                        }
                     }
                 }
             }
@@ -649,6 +656,9 @@ public class ResultSetModel {
     }
 
     public boolean isAttributeReadOnly(@NotNull DBDAttributeBinding attribute) {
+        if (!isSingleSource()) {
+            return true;
+        }
         if (attribute.getMetaAttribute().isReadOnly()) {
             return true;
         }
@@ -668,6 +678,7 @@ public class ResultSetModel {
         this.updateInProgress = updateInProgress;
     }
 
+    @NotNull
     ResultSetRow addNewRow(int rowNum, @NotNull Object[] data) {
         ResultSetRow newRow = new ResultSetRow(curRows.size(), data);
         newRow.setVisualNumber(rowNum);
@@ -818,7 +829,24 @@ public class ResultSetModel {
                     visibleAttributes.remove(filterConstraint.getAttribute());
                 } else {
                     if (!visibleAttributes.contains(filterConstraint.getAttribute())) {
-                        visibleAttributes.add((DBDAttributeBinding)filterConstraint.getAttribute());
+                        DBDAttributeBinding attribute = (DBDAttributeBinding) filterConstraint.getAttribute();
+                        if (attribute.getParentObject() == null) {
+                            // Add only root attributes
+                            visibleAttributes.add(attribute);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (filter.getConstraints().size() != attributes.length) {
+            // Update visibility
+            for (Iterator<DBDAttributeBinding> iter = visibleAttributes.iterator(); iter.hasNext(); ) {
+                final DBDAttributeBinding attr = iter.next();
+                if (filter.getConstraint(attr, true) == null) {
+                    // No constraint for this attribute: use default visibility
+                    if (!isVisibleByDefault(attr)) {
+                        iter.remove();
                     }
                 }
             }
@@ -883,7 +911,7 @@ public class ResultSetModel {
         if (executionSource != null && executionSource.getDataContainer() instanceof DBSEntity) {
             // Filter pseudo attributes if we query single entity
             for (DBDAttributeBinding binding : this.attributes) {
-                if (!binding.isPseudoAttribute()) {
+                if (isVisibleByDefault(binding)) {
                     // Make visible "real" attributes
                     this.visibleAttributes.add(binding);
                 }
@@ -891,6 +919,10 @@ public class ResultSetModel {
         } else {
             Collections.addAll(this.visibleAttributes, this.attributes);
         }
+    }
+
+    private static boolean isVisibleByDefault(DBDAttributeBinding binding) {
+        return !binding.isPseudoAttribute();
     }
 
     public DBCStatistics getStatistics() {

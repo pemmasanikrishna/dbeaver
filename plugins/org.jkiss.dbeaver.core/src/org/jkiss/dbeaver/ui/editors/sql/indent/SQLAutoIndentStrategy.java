@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.sql.indent;
 
@@ -182,6 +181,8 @@ public class SQLAutoIndentStrategy extends DefaultIndentLineAutoEditStrategy {
     }
 
     private boolean updateKeywordCase(final IDocument document, DocumentCommand command) throws BadLocationException {
+        final String commandPrefix = syntaxManager.getControlCommandPrefix();
+
         // Whitespace - check for keyword
         final int startPos, endPos;
         int pos = command.offset - 1;
@@ -189,7 +190,11 @@ public class SQLAutoIndentStrategy extends DefaultIndentLineAutoEditStrategy {
             pos--;
         }
         endPos = pos + 1;
-        while (pos >= 0 && Character.isJavaIdentifierPart(document.getChar(pos))) {
+        while (pos >= 0) {
+            char ch = document.getChar(pos);
+            if (!Character.isJavaIdentifierPart(ch) && commandPrefix.indexOf(ch) == -1) {
+                break;
+            }
             pos--;
         }
         startPos = pos + 1;
@@ -220,21 +225,25 @@ public class SQLAutoIndentStrategy extends DefaultIndentLineAutoEditStrategy {
 
         //get previous token
         int previousToken = scanner.previousToken(command.offset - 1, SQLHeuristicScanner.UNBOUND);
+        int nextToken = scanner.nextToken(command.offset, SQLHeuristicScanner.UNBOUND);
 
-        StringBuilder indent;
-
-        StringBuilder beginIndentaion = new StringBuilder();
+        String indent;
+        String beginIndentaion = "";
 
         if (isSupportedAutoCompletionToken(previousToken)) {
             indent = indenter.computeIndentation(command.offset);
 
-            beginIndentaion.append(indenter.getReferenceIndentation(command.offset));
+            beginIndentaion = indenter.getReferenceIndentation(command.offset);
         } else {
-            indent = indenter.getReferenceIndentation(command.offset);
+            if (nextToken == SQLIndentSymbols.Tokenend || nextToken == SQLIndentSymbols.TokenEND) {
+                indent = indenter.getReferenceIndentation(command.offset + 1);
+            } else {
+                indent = indenter.getReferenceIndentation(command.offset);
+            }
         }
 
         if (indent == null) {
-            indent = new StringBuilder(); //$NON-NLS-1$
+            indent = ""; //$NON-NLS-1$
         }
 
         try {
@@ -299,8 +308,8 @@ public class SQLAutoIndentStrategy extends DefaultIndentLineAutoEditStrategy {
         DBPPreferenceStore preferenceStore = DBeaverCore.getGlobalPreferenceStore();
         boolean closeBeginEnd = preferenceStore.getBoolean(SQLPreferenceConstants.SQLEDITOR_CLOSE_BEGIN_END);
         if (closeBeginEnd) {
-            autoCompletionMap.put(SQLIndentSymbols.Tokenbegin, SQLIndentSymbols.beginTrail);
-            autoCompletionMap.put(SQLIndentSymbols.TokenBEGIN, SQLIndentSymbols.BEGINTrail);
+            autoCompletionMap.put(SQLIndentSymbols.Tokenbegin, SQLIndentSymbols.end);
+            autoCompletionMap.put(SQLIndentSymbols.TokenBEGIN, SQLIndentSymbols.END);
         }
 
     }

@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.editors.object.struct;
@@ -25,9 +24,7 @@ import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.widgets.Combo;
-import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Text;
+import org.eclipse.swt.widgets.*;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.model.impl.DBObjectNameCaseTransformer;
@@ -53,10 +50,13 @@ public class EditConstraintPage extends AttributesSelectorPage {
     private String constraintName;
     private DBSEntityConstraintType[] constraintTypes;
     private DBSEntityConstraintType selectedConstraintType;
+    private String constraintExpression;
     private DBSEntityReferrer constraint;
     private Collection<? extends DBSEntityAttributeRef> attributes;
 
     private Map<DBSEntityConstraintType, String> TYPE_PREFIX = new HashMap<>();
+    private Group expressionGroup;
+    private Text expressionText;
 
     public EditConstraintPage(
         String title,
@@ -91,6 +91,22 @@ public class EditConstraintPage extends AttributesSelectorPage {
     }
 
     @Override
+    protected Composite createPageContents(Composite parent) {
+        final Composite pageContents = super.createPageContents(parent);
+        toggleEditAreas();
+        return pageContents;
+    }
+
+    private void toggleEditAreas() {
+        final boolean custom = selectedConstraintType.isCustom();
+        columnsGroup.setVisible(!custom);
+        ((GridData)columnsGroup.getLayoutData()).exclude = custom;
+        expressionGroup.setVisible(custom);
+        ((GridData)expressionGroup.getLayoutData()).exclude = !custom;
+        columnsGroup.getParent().layout();
+    }
+
+    @Override
     protected void createContentsBeforeColumns(Composite panel)
     {
         if (entity != null) {
@@ -98,6 +114,7 @@ public class EditConstraintPage extends AttributesSelectorPage {
             addTypePrefix(DBSEntityConstraintType.UNIQUE_KEY, "_UN");
             addTypePrefix(DBSEntityConstraintType.VIRTUAL_KEY, "_VK");
             addTypePrefix(DBSEntityConstraintType.FOREIGN_KEY, "_FK");
+            addTypePrefix(DBSEntityConstraintType.CHECK, "_CHECK");
 
             String namePrefix = TYPE_PREFIX.get(constraintTypes[0]);
             if (namePrefix == null) {
@@ -146,8 +163,26 @@ public class EditConstraintPage extends AttributesSelectorPage {
                         }
                     }
                 }
+                toggleEditAreas();
             }
         });
+    }
+
+    @Override
+    protected void createContentsAfterColumns(Composite panel) {
+        expressionGroup = UIUtils.createControlGroup(panel, "Expression", 1, GridData.FILL_BOTH, 0);
+        expressionText = new Text(expressionGroup, SWT.BORDER | SWT.MULTI);
+        GridData gd = new GridData(GridData.FILL_BOTH);
+        gd.heightHint = expressionText.getLineHeight() * 3;
+        expressionText.setLayoutData(gd);
+        expressionText.addModifyListener(new ModifyListener() {
+            @Override
+            public void modifyText(ModifyEvent e) {
+                constraintExpression = expressionText.getText();
+                updatePageState();
+            }
+        });
+
     }
 
     public String getConstraintName() {
@@ -157,6 +192,22 @@ public class EditConstraintPage extends AttributesSelectorPage {
     public DBSEntityConstraintType getConstraintType()
     {
         return selectedConstraintType;
+    }
+
+    public String getConstraintExpression() {
+        return constraintExpression;
+    }
+
+    @Override
+    public boolean isPageComplete() {
+        if (selectedConstraintType == null) {
+            return false;
+        }
+        if (selectedConstraintType.isCustom()) {
+            return !CommonUtils.isEmpty(constraintExpression);
+        } else {
+            return super.isPageComplete();
+        }
     }
 
     @Override

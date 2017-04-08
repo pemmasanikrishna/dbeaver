@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.data.registry;
 
@@ -22,13 +21,11 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataKind;
-import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.impl.AbstractDescriptor;
 import org.jkiss.dbeaver.model.struct.DBSDataType;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
 import org.jkiss.dbeaver.model.struct.DBSTypedObjectEx;
-import org.jkiss.dbeaver.registry.DataSourceProviderDescriptor;
-import org.jkiss.dbeaver.registry.DataSourceProviderRegistry;
 import org.jkiss.dbeaver.registry.RegistryConstants;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.ui.data.IValueManager;
@@ -62,7 +59,7 @@ public class ValueManagerDescriptor extends AbstractDescriptor
         DBPDataKind dataKind;
         ObjectType valueType;
         String extension;
-        DataSourceProviderDescriptor dataSource;
+        String dataSource;
     }
 
     private IValueManager instance;
@@ -81,7 +78,7 @@ public class ValueManagerDescriptor extends AbstractDescriptor
             String className = typeElement.getAttribute(ATTR_TYPE);
             String ext = typeElement.getAttribute(ATTR_EXTENSION);
             String dspId = typeElement.getAttribute(ATTR_DATA_SOURCE);
-            if (!CommonUtils.isEmpty(kindName) || !CommonUtils.isEmpty(typeName) || !CommonUtils.isEmpty(className) || !CommonUtils.isEmpty(kindName) || !CommonUtils.isEmpty(ext)) {
+            if (!CommonUtils.isEmpty(kindName) || !CommonUtils.isEmpty(typeName) || !CommonUtils.isEmpty(className) || !CommonUtils.isEmpty(dspId) || !CommonUtils.isEmpty(ext)) {
                 SupportInfo info = new SupportInfo();
                 if (!CommonUtils.isEmpty(kindName)) {
                     try {
@@ -100,10 +97,7 @@ public class ValueManagerDescriptor extends AbstractDescriptor
                     info.extension = ext;
                 }
                 if (!CommonUtils.isEmpty(dspId)) {
-                    info.dataSource = DataSourceProviderRegistry.getInstance().getDataSourceProvider(dspId);
-                    if (info.dataSource == null) {
-                        log.warn("Data source '" + dspId + "' not found");
-                    }
+                    info.dataSource = dspId;
                 }
                 supportInfos.add(info);
             }
@@ -129,13 +123,13 @@ public class ValueManagerDescriptor extends AbstractDescriptor
         return instance;
     }
 
-    public boolean supportsType(@Nullable DBPDataSourceContainer dataSource, DBSTypedObject typedObject, Class<?> valueType, boolean checkDataSource, boolean checkType)
+    public boolean supportsType(@Nullable DBPDataSource dataSource, DBSTypedObject typedObject, Class<?> valueType, boolean checkDataSource, boolean checkType)
     {
         final DBPDataKind dataKind = typedObject.getDataKind();
         for (SupportInfo info : supportInfos) {
             if (dataSource != null && info.dataSource != null) {
-                DriverDescriptor driver = (DriverDescriptor) dataSource.getDriver();
-                if (driver.getProviderDescriptor() != info.dataSource) {
+                DriverDescriptor driver = (DriverDescriptor) dataSource.getContainer().getDriver();
+                if (!info.dataSource.equals(driver.getProviderDescriptor().getId()) && !info.dataSource.equals(dataSource.getClass().getName())) {
                     continue;
                 }
             } else if (checkDataSource) {
@@ -170,8 +164,15 @@ public class ValueManagerDescriptor extends AbstractDescriptor
                     return true;
                 }
             }
+            if (!checkType && info.valueType == null && info.dataKind == null && info.typeName == null && info.extension == null) {
+                return true;
+            }
         }
         return false;
     }
 
+    @Override
+    public String toString() {
+        return id;
+    }
 }

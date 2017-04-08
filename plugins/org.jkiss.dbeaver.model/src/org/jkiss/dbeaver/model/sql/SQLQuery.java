@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.model.sql;
@@ -36,6 +35,7 @@ import net.sf.jsqlparser.statement.select.SelectItem;
 import net.sf.jsqlparser.statement.update.Update;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.DBCAttributeMetaData;
 import org.jkiss.dbeaver.model.exec.DBCEntityMetaData;
@@ -48,14 +48,16 @@ import java.util.regex.Pattern;
 /**
  * SQLQuery
  */
-public class SQLQuery {
+public class SQLQuery implements SQLScriptElement {
 
-    private static final Pattern QUERY_TITLE_PATTERN = Pattern.compile("--\\s*(?:NAME|TITLE)\\s*:\\s*(.+)\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern QUERY_TITLE_PATTERN = Pattern.compile("(?:--|/\\*)\\s*(?:NAME|TITLE)\\s*:\\s*(.+)\\s*", Pattern.CASE_INSENSITIVE);
 
+    @Nullable
+    private final DBPDataSource dataSource;
     @NotNull
-    private String originalQuery;
+    private String originalText;
     @NotNull
-    private String query;
+    private String text;
     private int offset;
     private int length;
     private Object data;
@@ -68,36 +70,37 @@ public class SQLQuery {
     private List<SQLSelectItem> selectItems;
     private String queryTitle;
 
-    public SQLQuery(@NotNull String query)
+    public SQLQuery(@Nullable DBPDataSource dataSource, @NotNull String text)
     {
-        this(query, 0, query.length());
+        this(dataSource, text, 0, text.length());
     }
 
     /**
      * Copy constructor.
      * Copies query state but sets new query string.
      */
-    public SQLQuery(@NotNull String query, @NotNull SQLQuery sourceQuery) {
-        this(query, sourceQuery, true);
+    public SQLQuery(@Nullable DBPDataSource dataSource, @NotNull String text, @NotNull SQLQuery sourceQuery) {
+        this(dataSource, text, sourceQuery, true);
     }
 
-    public SQLQuery(@NotNull String query, @NotNull SQLQuery sourceQuery, boolean preserveOriginal) {
-        this(query, sourceQuery.offset, sourceQuery.length);
+    public SQLQuery(@Nullable DBPDataSource dataSource, @NotNull String text, @NotNull SQLQuery sourceQuery, boolean preserveOriginal) {
+        this(dataSource, text, sourceQuery.offset, sourceQuery.length);
         if (preserveOriginal) {
-            this.originalQuery = sourceQuery.originalQuery;
+            this.originalText = sourceQuery.originalText;
         }
         this.parameters = sourceQuery.parameters;
         this.data = sourceQuery.data;
     }
 
-    public SQLQuery(@NotNull String query, int offset, int length)
+    public SQLQuery(@Nullable DBPDataSource dataSource, @NotNull String text, int offset, int length)
     {
-        this.originalQuery = this.query = query;
+        this.dataSource = dataSource;
+        this.originalText = this.text = text;
         this.offset = offset;
         this.length = length;
 
         try {
-            statement = CCJSqlParserUtil.parse(query);
+            statement = CCJSqlParserUtil.parse(text);
             if (statement instanceof Select) {
                 type = SQLQueryType.SELECT;
                 // Detect single source table
@@ -150,7 +153,7 @@ public class SQLQuery {
         }
         // Extract query title
         queryTitle = null;
-        final Matcher matcher = QUERY_TITLE_PATTERN.matcher(query);
+        final Matcher matcher = QUERY_TITLE_PATTERN.matcher(text);
         if (matcher.find()) {
             queryTitle = matcher.group(1);
         }
@@ -160,7 +163,7 @@ public class SQLQuery {
         if (name == null) {
             return null;
         }
-        return DBUtils.getUnQuotedIdentifier(name, "\"");
+        return DBUtils.getUnQuotedIdentifier(dataSource, name);
     }
 
     /**
@@ -196,18 +199,18 @@ public class SQLQuery {
     }
 
     @NotNull
-    public String getOriginalQuery() {
-        return originalQuery;
+    public String getOriginalText() {
+        return originalText;
     }
 
     @NotNull
-    public String getQuery()
+    public String getText()
     {
-        return query;
+        return text;
     }
 
-    public void setQuery(@NotNull String query) {
-        this.query = query;
+    public void setText(@NotNull String text) {
+        this.text = text;
     }
 
     public String getQueryTitle() {
@@ -261,7 +264,7 @@ public class SQLQuery {
     }
 
     public void reset() {
-        this.query = this.originalQuery;
+        this.text = this.originalText;
         if (this.parameters != null) {
             setParameters(this.parameters);
         }
@@ -270,7 +273,7 @@ public class SQLQuery {
     @Override
     public String toString()
     {
-        return query;
+        return text;
     }
 
     private static class SingleTableMeta implements DBCEntityMetaData {
@@ -335,6 +338,6 @@ public class SQLQuery {
 
     @Override
     public boolean equals(Object obj) {
-        return obj instanceof SQLQuery && query.equals(((SQLQuery) obj).query);
+        return obj instanceof SQLQuery && text.equals(((SQLQuery) obj).text);
     }
 }

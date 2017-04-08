@@ -1,28 +1,27 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model.runtime;
 
-import org.jkiss.dbeaver.Log;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
 
@@ -33,12 +32,11 @@ public abstract class AbstractJob extends Job
 {
     private static final Log log = Log.getLog(AbstractJob.class);
 
-    public static final int TIMEOUT_BEFORE_BLOCK_CANCEL = 400;
+    public static final int TIMEOUT_BEFORE_BLOCK_CANCEL = 250;
 
     private DBRProgressMonitor progressMonitor;
     private volatile boolean finished = false;
     private volatile boolean blockCanceled = false;
-    private int cancelTimeout = TIMEOUT_BEFORE_BLOCK_CANCEL;
     private AbstractJob attachedJob = null;
 
     // Attached job may be used to "overwrite" current job.
@@ -50,14 +48,8 @@ public abstract class AbstractJob extends Job
         super(name);
     }
 
-    public int getCancelTimeout()
-    {
-        return cancelTimeout;
-    }
-
-    public void setCancelTimeout(int cancelTimeout)
-    {
-        this.cancelTimeout = cancelTimeout;
+    public boolean isFinished() {
+        return finished;
     }
 
     protected Thread getActiveThread()
@@ -120,39 +112,30 @@ public abstract class AbstractJob extends Job
         }
         // Run canceling job
         if (!blockCanceled) {
-            // Try to interrupt thread first
-            Thread activeThread = getActiveThread();
-            activeThread.interrupt();
-
-            // Schedule block cancel after timeout (let activeThread.interrupt to finish it's job)
             Job cancelJob = new Job("Cancel block") { //$NON-N LS-1$
                 @Override
                 protected IStatus run(IProgressMonitor monitor)
                 {
                     if (!finished && !blockCanceled) {
-                        DBRBlockingObject block = progressMonitor.getActiveBlock();
-                        if (block != null) {
-                            RuntimeUtils.setThreadName("Operation canceler [" + block + "]");
-                            try {
-                                block.cancelBlock();
-                            } catch (DBException e) {
-                                return GeneralUtils.makeExceptionStatus("Can't interrupt operation " + block, e); //$NON-NLS-1$
-                            } catch (Throwable e) {
-                                log.debug("Cancel error", e);
-                                return Status.CANCEL_STATUS;
-                            }
-                            blockCanceled = true;
+                        try {
+                            BlockCanceler.cancelBlock(progressMonitor, getActiveThread());
+                        } catch (DBException e) {
+                            return GeneralUtils.makeExceptionStatus(e);
+                        } catch (Throwable e) {
+                            log.debug("Cancel error", e);
+                            return Status.CANCEL_STATUS;
                         }
+                        blockCanceled = true;
                     }
                     return Status.OK_STATUS;
                 }
             };
             try {
-                // Cancel it in three seconds
-                cancelJob.schedule(cancelTimeout);
+                // Schedule cancel after short pause
+                cancelJob.schedule(TIMEOUT_BEFORE_BLOCK_CANCEL);
             } catch (Exception e) {
                 // If this happens during shutdown and job manager is not active
-                //log.debug(e);
+                log.debug(e);
             }
         }
     }

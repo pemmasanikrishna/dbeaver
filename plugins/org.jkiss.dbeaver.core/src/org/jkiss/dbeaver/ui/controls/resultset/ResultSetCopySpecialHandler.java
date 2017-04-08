@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls.resultset;
 
@@ -74,6 +73,7 @@ public class ResultSetCopySpecialHandler extends ResultSetCommandHandler impleme
 
         public static final String PARAM_COPY_HEADER = "copyHeader";
         public static final String PARAM_COPY_ROWS = "copyRows";
+        public static final String PARAM_QUOTE_CELLS = "quoteCells";
         public static final String PARAM_FORMAT = "format";
         public static final String PARAM_COL_DELIMITER = "delimiter";
         public static final String PARAM_ROW_DELIMITER = "rowDelimiter";
@@ -82,7 +82,8 @@ public class ResultSetCopySpecialHandler extends ResultSetCommandHandler impleme
 
         private Button copyHeaderCheck;
         private Button copyRowsCheck;
-        private Combo formatCombo;
+        private Button quoteCellsCheck;
+        private ValueFormatSelector formatSelector;
         private Combo colDelimCombo;
         private Combo rowDelimCombo;
 
@@ -93,6 +94,7 @@ public class ResultSetCopySpecialHandler extends ResultSetCommandHandler impleme
             super(shell);
             settings = UIUtils.getDialogSettings("AdvanceCopySettings");
             copySettings = new ResultSetCopySettings();
+            copySettings.setQuoteCells(true);
             copySettings.setCopyHeader(true);
             copySettings.setCopyRowNumbers(false);
             copySettings.setFormat(DBDDisplayFormat.UI);
@@ -103,6 +105,9 @@ public class ResultSetCopySpecialHandler extends ResultSetCommandHandler impleme
             }
             if (settings.get(PARAM_COPY_ROWS) != null) {
                 copySettings.setCopyRowNumbers(settings.getBoolean(PARAM_COPY_ROWS));
+            }
+            if (settings.get(PARAM_QUOTE_CELLS) != null) {
+                copySettings.setQuoteCells(settings.getBoolean(PARAM_QUOTE_CELLS));
             }
             if (settings.get(PARAM_FORMAT) != null) {
                 copySettings.setFormat(DBDDisplayFormat.valueOf(settings.get(PARAM_FORMAT)));
@@ -127,15 +132,12 @@ public class ResultSetCopySpecialHandler extends ResultSetCommandHandler impleme
             Composite group = (Composite)super.createDialogArea(parent);
             ((GridLayout)group.getLayout()).numColumns = 2;
 
-            copyHeaderCheck = UIUtils.createLabelCheckbox(group, "Copy header", copySettings.isCopyHeader());
-            copyRowsCheck = UIUtils.createLabelCheckbox(group, "Copy row numbers", copySettings.isCopyRowNumbers());
+            copyHeaderCheck = UIUtils.createCheckbox(group, "Copy header", null, copySettings.isCopyHeader(), 2);
+            copyRowsCheck = UIUtils.createCheckbox(group, "Copy row numbers", null, copySettings.isCopyRowNumbers(), 2);
+            quoteCellsCheck = UIUtils.createCheckbox(group, "Quote cell values", "Place cell value in quotes if it contains column or row delimiter", copySettings.isQuoteCells(), 2);
 
-            UIUtils.createControlLabel(group, "Format");
-            formatCombo = new Combo(group, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY);
-            formatCombo.add("Display (default)");
-            formatCombo.add("Editable");
-            formatCombo.add("Database native");
-            formatCombo.select(copySettings.getFormat() == DBDDisplayFormat.UI ? 0 : copySettings.getFormat() == DBDDisplayFormat.EDIT ? 1 : 2);
+            formatSelector = new ValueFormatSelector(group);
+            formatSelector.select(copySettings.getFormat());
 
             colDelimCombo = createDelimiterCombo(group, "Column Delimiter", new String[] {"\t", ";", ","}, copySettings.getColumnDelimiter());
             rowDelimCombo = createDelimiterCombo(group, "Row Delimiter", new String[] {"\n", "|", "^"}, copySettings.getRowDelimiter());
@@ -176,19 +178,15 @@ public class ResultSetCopySpecialHandler extends ResultSetCommandHandler impleme
         protected void okPressed() {
             copySettings.setCopyHeader(copyHeaderCheck.getSelection());
             copySettings.setCopyRowNumbers(copyRowsCheck.getSelection());
-            DBDDisplayFormat format = DBDDisplayFormat.UI;
-            switch (formatCombo.getSelectionIndex()) {
-                case 0: format = DBDDisplayFormat.UI; break;
-                case 1: format = DBDDisplayFormat.EDIT; break;
-                case 2: format = DBDDisplayFormat.NATIVE; break;
-            }
-            copySettings.setFormat(format);
+            copySettings.setQuoteCells(quoteCellsCheck.getSelection());
+            copySettings.setFormat(formatSelector.getSelection());
             copySettings.setColumnDelimiter(convertDelimiterFromDisplay(colDelimCombo.getText()));
             copySettings.setRowDelimiter(convertDelimiterFromDisplay(rowDelimCombo.getText()));
 
             settings.put(PARAM_COPY_HEADER, copySettings.isCopyHeader());
             settings.put(PARAM_COPY_ROWS, copySettings.isCopyRowNumbers());
-            settings.put(PARAM_FORMAT, format.name());
+            settings.put(PARAM_QUOTE_CELLS, copySettings.isQuoteCells());
+            settings.put(PARAM_FORMAT, copySettings.getFormat().name());
             settings.put(PARAM_COL_DELIMITER, copySettings.getColumnDelimiter());
             settings.put(PARAM_ROW_DELIMITER, copySettings.getRowDelimiter());
             super.okPressed();

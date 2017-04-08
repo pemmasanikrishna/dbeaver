@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ext.postgresql;
@@ -50,13 +49,14 @@ public class PostgreConstants {
     public static final String PROP_SSL_FACTORY = "sslFactory";
 
     public static final DBSObjectState STATE_UNAVAILABLE = new DBSObjectState("Unavailable", DBIcon.OVER_EXTERNAL);
-    public static final DBSEntityConstraintType CONSTRAINT_TRIGGER = new DBSEntityConstraintType("trigger", "TRIGGER", "Trigger constraint", false, false); //$NON-NLS-1$
-    public static final DBSEntityConstraintType CONSTRAINT_EXCLUSIVE = new DBSEntityConstraintType("exclusive", "EXCLUSIVE", "Exclusive constraint", false, false); //$NON-NLS-1$
+    public static final DBSEntityConstraintType CONSTRAINT_TRIGGER = new DBSEntityConstraintType("trigger", "TRIGGER", "Trigger constraint", false, false, false); //$NON-NLS-1$
+    public static final DBSEntityConstraintType CONSTRAINT_EXCLUSIVE = new DBSEntityConstraintType("exclusive", "EXCLUSIVE", "Exclusive constraint", false, false, false); //$NON-NLS-1$
 
     public static final String INFO_SCHEMA_NAME = "information_schema";
     public static final String CATALOG_SCHEMA_NAME = "pg_catalog";
+    public static final String TEMP_SCHEMA_NAME = "pg_temp";
     public static final String TOAST_SCHEMA_PREFIX = "pg_toast";
-    public static final String TEMP_SCHEMA_PREFIX = "pg_temp";
+    public static final String TEMP_SCHEMA_PREFIX = "pg_temp_";
     public static final String PUBLIC_SCHEMA_NAME = "public";
 
     public static final String PG_OBJECT_CLASS = "org.postgresql.util.PGobject";
@@ -68,6 +68,7 @@ public class PostgreConstants {
     public static final String TYPE_HSTORE = "hstore";
     public static final String TYPE_JSON = "json";
     public static final String TYPE_JSONB = "jsonb";
+    public static final String TYPE_BIT = "bit";
     public static final String HANDLER_SSL = "postgre_ssl";
 
     public static final String EC_PERMISSION_DENIED = "42501";
@@ -79,7 +80,7 @@ public class PostgreConstants {
     public static final String PG_INSTALL_PROP_DATA_DIRECTORY = "Data Directory";
     public static final String BIN_FOLDER = "bin";
 
-    public static Set<String> SERIAL_TYPES = new HashSet<>();
+    public static Map<String, String> SERIAL_TYPES = new HashMap<>();
     public static Map<String, String> DATA_TYPE_ALIASES = new HashMap<>();
 
     static {
@@ -92,16 +93,10 @@ public class PostgreConstants {
         DATA_TYPE_ALIASES.put("double precision", "float8");
         DATA_TYPE_ALIASES.put("real", "float4");
 
-        DATA_TYPE_ALIASES.put("serial", "int4");
-        DATA_TYPE_ALIASES.put("serial8", "int8");
-        DATA_TYPE_ALIASES.put("serial2", "int2");
-        DATA_TYPE_ALIASES.put("smallserial", "int2");
-        DATA_TYPE_ALIASES.put("bigserial", "int8");
-
-        SERIAL_TYPES.add("serial");
-        SERIAL_TYPES.add("serial8");
-        SERIAL_TYPES.add("serial2");
-        SERIAL_TYPES.add("smallserial");
-        SERIAL_TYPES.add("bigserial");
+        SERIAL_TYPES.put("serial", "int4");
+        SERIAL_TYPES.put("serial8", "int8");
+        SERIAL_TYPES.put("serial2", "int2");
+        SERIAL_TYPES.put("smallserial", "int2");
+        SERIAL_TYPES.put("bigserial", "int8");
     }
 }

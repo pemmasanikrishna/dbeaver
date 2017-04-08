@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.preferences;
 
@@ -26,6 +25,8 @@ import org.eclipse.swt.widgets.*;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 import org.eclipse.ui.IWorkbenchPropertyPage;
+import org.eclipse.ui.dialogs.PreferenceLinkArea;
+import org.eclipse.ui.preferences.IWorkbenchPreferenceContainer;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.core.CoreMessages;
@@ -48,9 +49,6 @@ public class PrefPageDatabaseGeneral extends AbstractPrefPage implements IWorkbe
     private Button longOperationsCheck;
     private Spinner longOperationsTimeout;
 
-    private Button keepEditorsOnRestart;
-    private Button refreshEditorOnOpen;
-    private Button syncEditorDataSourceWithNavigator;
     private Combo defaultResourceEncoding;
 
     public PrefPageDatabaseGeneral()
@@ -91,20 +89,6 @@ public class PrefPageDatabaseGeneral extends AbstractPrefPage implements IWorkbe
             }
         }
 
-        // Editors settings
-        {
-            Group groupEditors = UIUtils.createControlGroup(composite, CoreMessages.pref_page_ui_general_group_editors, 1, GridData.VERTICAL_ALIGN_BEGINNING, 0);
-
-            keepEditorsOnRestart = UIUtils.createCheckbox(groupEditors, CoreMessages.pref_page_ui_general_keep_database_editors, false);
-            keepEditorsOnRestart.setToolTipText("Remembers open editors (e.g. table editors) and reopens them after DBeaver restart.");
-
-            refreshEditorOnOpen = UIUtils.createCheckbox(groupEditors, CoreMessages.pref_page_ui_general_refresh_editor_on_open, false);
-            refreshEditorOnOpen.setToolTipText("Refreshes object from database every time you open this object's editor.\nYou may need this option if your database structure changes frequently (e.g. by SQL scripts).");
-
-            syncEditorDataSourceWithNavigator = UIUtils.createCheckbox(groupEditors, "Auto-sync editor connection with navigator selection", false);
-            syncEditorDataSourceWithNavigator.setLayoutData(new GridData(GridData.BEGINNING, GridData.BEGINNING, true, false, 2, 1));
-            syncEditorDataSourceWithNavigator.setToolTipText("Automatically sets editor (e.g. SQL editor) connection from selected navigator node.\nMakes sense if you need to change active connection/schema frequently.");
-        }
         {
             // Resources
             Group groupResources = UIUtils.createControlGroup(composite, "Resources", 2, GridData.VERTICAL_ALIGN_BEGINNING, 0);
@@ -112,6 +96,20 @@ public class PrefPageDatabaseGeneral extends AbstractPrefPage implements IWorkbe
             UIUtils.createControlLabel(groupResources, "Default resource encoding");
             defaultResourceEncoding = UIUtils.createEncodingCombo(groupResources, GeneralUtils.DEFAULT_ENCODING);
             defaultResourceEncoding.setToolTipText("Default encoding for scripts and text files. Change requires restart");
+
+        }
+
+        {
+            // Link to secure storage config
+            new PreferenceLinkArea(composite, SWT.NONE,
+                PrefPageEntityEditor.PAGE_ID,
+                "<a>''{0}''</a> settings",
+                (IWorkbenchPreferenceContainer) getContainer(), null); //$NON-NLS-1$
+
+            new PreferenceLinkArea(composite, SWT.NONE,
+                PrefPageSQLEditor.PAGE_ID,
+                "<a>''{0}''</a> settings",
+                (IWorkbenchPreferenceContainer) getContainer(), null); //$NON-NLS-1$
 
         }
 
@@ -129,9 +127,6 @@ public class PrefPageDatabaseGeneral extends AbstractPrefPage implements IWorkbe
         longOperationsCheck.setSelection(store.getBoolean(DBeaverPreferences.AGENT_LONG_OPERATION_NOTIFY));
         longOperationsTimeout.setSelection(store.getInt(DBeaverPreferences.AGENT_LONG_OPERATION_TIMEOUT));
 
-        keepEditorsOnRestart.setSelection(store.getBoolean(DBeaverPreferences.UI_KEEP_DATABASE_EDITORS));
-        refreshEditorOnOpen.setSelection(store.getBoolean(DBeaverPreferences.NAVIGATOR_REFRESH_EDITORS_ON_OPEN));
-        syncEditorDataSourceWithNavigator.setSelection(store.getBoolean(DBeaverPreferences.NAVIGATOR_SYNC_EDITOR_DATASOURCE));
         defaultResourceEncoding.setText(store.getString(DBeaverPreferences.DEFAULT_RESOURCE_ENCODING));
     }
 
@@ -145,9 +140,6 @@ public class PrefPageDatabaseGeneral extends AbstractPrefPage implements IWorkbe
         store.setValue(DBeaverPreferences.AGENT_LONG_OPERATION_NOTIFY, longOperationsCheck.getSelection());
         store.setValue(DBeaverPreferences.AGENT_LONG_OPERATION_TIMEOUT, longOperationsTimeout.getSelection());
 
-        store.setValue(DBeaverPreferences.UI_KEEP_DATABASE_EDITORS, keepEditorsOnRestart.getSelection());
-        store.setValue(DBeaverPreferences.NAVIGATOR_REFRESH_EDITORS_ON_OPEN, refreshEditorOnOpen.getSelection());
-        store.setValue(DBeaverPreferences.NAVIGATOR_SYNC_EDITOR_DATASOURCE, syncEditorDataSourceWithNavigator.getSelection());
         store.setValue(DBeaverPreferences.DEFAULT_RESOURCE_ENCODING, defaultResourceEncoding.getText());
 
         PrefUtils.savePreferenceStore(store);

@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.preferences;
 
@@ -51,6 +50,7 @@ public class PrefPageResultSetMain extends TargetPrefPage
     private Button keepStatementOpenCheck;
     private Button rollbackOnErrorCheck;
     private Button alwaysUseAllColumns;
+    private Button newRowsAfter;
 
 
     public PrefPageResultSetMain()
@@ -71,6 +71,7 @@ public class PrefPageResultSetMain extends TargetPrefPage
             store.contains(DBeaverPreferences.RESULT_SET_CANCEL_TIMEOUT) ||
             store.contains(ModelPreferences.QUERY_ROLLBACK_ON_ERROR) ||
             store.contains(DBeaverPreferences.RS_EDIT_USE_ALL_COLUMNS) ||
+            store.contains(DBeaverPreferences.RS_EDIT_NEW_ROWS_AFTER) ||
             store.contains(DBeaverPreferences.KEEP_STATEMENT_OPEN) ||
             store.contains(DBeaverPreferences.RESULT_SET_ORDER_SERVER_SIDE)
             ;
@@ -122,13 +123,14 @@ public class PrefPageResultSetMain extends TargetPrefPage
             keepStatementOpenCheck = UIUtils.createCheckbox(txnGroup, CoreMessages.pref_page_database_general_checkbox_keep_cursor, false);
             rollbackOnErrorCheck = UIUtils.createCheckbox(txnGroup, CoreMessages.pref_page_database_general_checkbox_rollback_on_error, false);
             alwaysUseAllColumns = UIUtils.createCheckbox(txnGroup, CoreMessages.pref_page_content_editor_checkbox_keys_always_use_all_columns, false);
+            newRowsAfter = UIUtils.createCheckbox(txnGroup, CoreMessages.pref_page_content_editor_checkbox_new_rows_after, false);
         }
 
         return composite;
     }
 
     private void updateOptionsEnablement() {
-        readQueryReferences.setEnabled(readQueryMetadata.getSelection());
+        readQueryReferences.setEnabled(readQueryMetadata.isEnabled() && readQueryMetadata.getSelection());
     }
 
     @Override
@@ -147,6 +149,7 @@ public class PrefPageResultSetMain extends TargetPrefPage
             keepStatementOpenCheck.setSelection(store.getBoolean(DBeaverPreferences.KEEP_STATEMENT_OPEN));
             rollbackOnErrorCheck.setSelection(store.getBoolean(ModelPreferences.QUERY_ROLLBACK_ON_ERROR));
             alwaysUseAllColumns.setSelection(store.getBoolean(DBeaverPreferences.RS_EDIT_USE_ALL_COLUMNS));
+            newRowsAfter.setSelection(store.getBoolean(DBeaverPreferences.RS_EDIT_NEW_ROWS_AFTER));
 
             updateOptionsEnablement();
         } catch (Exception e) {
@@ -170,6 +173,7 @@ public class PrefPageResultSetMain extends TargetPrefPage
             store.setValue(DBeaverPreferences.KEEP_STATEMENT_OPEN, keepStatementOpenCheck.getSelection());
             store.setValue(ModelPreferences.QUERY_ROLLBACK_ON_ERROR, rollbackOnErrorCheck.getSelection());
             store.setValue(DBeaverPreferences.RS_EDIT_USE_ALL_COLUMNS, alwaysUseAllColumns.getSelection());
+            store.setValue(DBeaverPreferences.RS_EDIT_NEW_ROWS_AFTER, newRowsAfter.getSelection());
         } catch (Exception e) {
             log.warn(e);
         }
@@ -191,6 +195,7 @@ public class PrefPageResultSetMain extends TargetPrefPage
         store.setToDefault(DBeaverPreferences.KEEP_STATEMENT_OPEN);
         store.setToDefault(ModelPreferences.QUERY_ROLLBACK_ON_ERROR);
         store.setToDefault(DBeaverPreferences.RS_EDIT_USE_ALL_COLUMNS);
+        store.setToDefault(DBeaverPreferences.RS_EDIT_NEW_ROWS_AFTER);
 
         updateOptionsEnablement();
     }

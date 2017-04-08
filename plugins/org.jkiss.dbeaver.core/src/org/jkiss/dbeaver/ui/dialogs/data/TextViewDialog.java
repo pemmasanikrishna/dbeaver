@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.data;
 
@@ -120,7 +119,7 @@ public class TextViewDialog extends ValueViewDialog {
                 textEdit.setTextLimit((int) maxSize);
             }
             if (readOnly) {
-                textEdit.setBackground(getShell().getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND));
+                //textEdit.setBackground(getShell().getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND));
             }
             GridData gd = new GridData(isForeignKey ? GridData.FILL_HORIZONTAL : GridData.FILL_BOTH);
             gd.widthHint = 300;
@@ -217,7 +216,7 @@ public class TextViewDialog extends ValueViewDialog {
         try {
             stringValue = new String(
                 bytes, 0, length,
-                DBValueFormatting.getDefaultBinaryFileEncoding(getValueController().getExecutionContext().getDataSource()));
+                getDefaultCharset());
         } catch (UnsupportedEncodingException e) {
             log.error(e);
             stringValue = new String(bytes);
@@ -227,15 +226,19 @@ public class TextViewDialog extends ValueViewDialog {
 
     private void setBinaryContent(String stringValue)
     {
+        String charset = getDefaultCharset();
         byte[] bytes;
         try {
-            bytes = stringValue.getBytes(
-                DBValueFormatting.getDefaultBinaryFileEncoding(getValueController().getExecutionContext().getDataSource()));
+            bytes = stringValue.getBytes(charset);
         } catch (UnsupportedEncodingException e) {
             log.error(e);
             bytes = stringValue.getBytes(Charset.defaultCharset());
         }
-        hexEditControl.setContent(bytes);
+        hexEditControl.setContent(bytes, charset);
+    }
+
+    private String getDefaultCharset() {
+        return DBValueFormatting.getDefaultBinaryFileEncoding(getValueController().getExecutionContext().getDataSource());
     }
 
     @Override
@@ -304,7 +307,7 @@ public class TextViewDialog extends ValueViewDialog {
             byte[] bytes = (byte[]) value;
             textEdit.setText(GeneralUtils.convertToString(bytes, 0, bytes.length));
             if (hexEditControl != null) {
-                hexEditControl.setContent(bytes);
+                hexEditControl.setContent(bytes, getDefaultCharset());
             }
         } else {
             // Should be string

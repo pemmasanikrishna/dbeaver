@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ext.postgresql;
@@ -27,6 +26,7 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
 import org.jkiss.dbeaver.model.DBPDataKind;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
@@ -165,7 +165,37 @@ public class PostgreUtils {
             throw new IllegalArgumentException("Unsupported vector type: " + pgVector.getClass().getName());
         }
     }
-    
+
+    public static int[] getIntVector(Object pgObject) {
+        Object pgVector = extractPGObjectValue(pgObject);
+        if (pgVector == null) {
+            return null;
+        }
+        if (pgVector instanceof String) {
+            final String vector = (String) pgVector;
+            if (vector.isEmpty()) {
+                return null;
+            }
+            final String[] strings = vector.split(" ");
+            final int[] ids = new int[strings.length];
+            for (int i = 0; i < strings.length; i++) {
+                ids[i] = Integer.parseInt(strings[i]);
+            }
+            return ids;
+        } else if (pgVector instanceof int[]) {
+            return (int[]) pgVector;
+        } else if (pgVector instanceof Integer[]) {
+            Integer[] objVector = (Integer[]) pgVector;
+            int[] result = new int[objVector.length];
+            for (int i = 0; i < objVector.length; i++) {
+                result[i] = objVector[i];
+            }
+            return result;
+        } else {
+            throw new IllegalArgumentException("Unsupported vector type: " + pgVector.getClass().getName());
+        }
+    }
+
     public static int getAttributePrecision(long typeOid, int typeMod) {
         //typeOid = convertArrayToBaseOid(typeOid);
         switch ((int) typeOid) {
@@ -401,6 +431,11 @@ public class PostgreUtils {
         for (int i = 0; i < objectList.size(); i++) {
             dbStat.setLong(index + i, objectList.get(i).getObjectId());
         }
+    }
+
+    public static String getViewDDL(PostgreViewBase view, String definition) {
+        String createSQL = (view instanceof PostgreView ? "CREATE OR REPLACE " : "CREATE ");
+        return createSQL + view.getViewType() + " " + view.getFullyQualifiedName(DBPEvaluationContext.DDL) + " AS\n" + definition;
     }
 
 }

@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.generic;
 
@@ -23,13 +22,13 @@ import org.eclipse.core.runtime.Platform;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaModel;
-import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
+import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaModelDescriptor;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPDriver;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSourceProvider;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.DBPDataSourceContainer;
-import org.jkiss.dbeaver.model.impl.AbstractDescriptor;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.utils.CommonUtils;
 
@@ -38,39 +37,16 @@ import java.util.Map;
 
 public class GenericDataSourceProvider extends JDBCDataSourceProvider {
 
-    private final Map<String, GenericMetaModel> metaModels = new HashMap<>();
+    private final Map<String, GenericMetaModelDescriptor> metaModels = new HashMap<>();
     private static final String EXTENSION_ID = "org.jkiss.dbeaver.generic.meta";
 
     public GenericDataSourceProvider()
     {
-        metaModels.put(GenericConstants.META_MODEL_STANDARD, new GenericMetaModel(GenericConstants.META_MODEL_STANDARD));
+        metaModels.put(GenericConstants.META_MODEL_STANDARD, new GenericMetaModelDescriptor());
         IExtensionRegistry extensionRegistry = Platform.getExtensionRegistry();
         IConfigurationElement[] extElements = extensionRegistry.getConfigurationElementsFor(EXTENSION_ID);
         for (IConfigurationElement ext : extElements) {
-            String metaClass = ext.getAttribute("class");
-            GenericMetaModel metaModel;
-            if (!CommonUtils.isEmpty(metaClass)) {
-                try {
-                    Class<? extends GenericMetaModel> metaClassImpl = AbstractDescriptor.getObjectClass(
-                        Platform.getBundle(ext.getContributor().getName()),
-                        metaClass,
-                        GenericMetaModel.class);
-                    if (metaClassImpl != null) {
-                        metaModel = metaClassImpl
-                            .getConstructor(IConfigurationElement.class)
-                            .newInstance(ext);
-                    } else {
-                        log.warn("Generic meta model implementation '" + metaClass + "' not found");
-                        continue;
-                    }
-                } catch (Exception e) {
-                    log.error(e);
-                    continue;
-                }
-            } else {
-                //for (IConfigurationElement metaChild : ext.getChildren("meta")) {
-                metaModel = new GenericMetaModel(ext);
-            }
+            GenericMetaModelDescriptor metaModel = new GenericMetaModelDescriptor(ext);
             metaModels.put(metaModel.getId(), metaModel);
             for (String driverClass : metaModel.getDriverClass()) {
                 metaModels.put(driverClass, metaModel);
@@ -135,7 +111,7 @@ public class GenericDataSourceProvider extends JDBCDataSourceProvider {
         @NotNull DBPDataSourceContainer container)
         throws DBException
     {
-        GenericMetaModel metaModel = null;
+        GenericMetaModelDescriptor metaModel = null;
         Object metaModelId = container.getDriver().getDriverParameter(GenericConstants.PARAM_META_MODEL);
         if (metaModelId != null && !GenericConstants.META_MODEL_STANDARD.equals(metaModelId)) {
             metaModel = metaModels.get(metaModelId.toString());
@@ -150,10 +126,11 @@ public class GenericDataSourceProvider extends JDBCDataSourceProvider {
         if (metaModel == null) {
             metaModel = getStandardMetaModel();
         }
-        return metaModel.createDataSource(monitor, container);
+        GenericMetaModel metaModelInstance = metaModel.getInstance();
+        return metaModelInstance.createDataSource(monitor, container);
     }
 
-    protected GenericMetaModel getStandardMetaModel() {
+    protected GenericMetaModelDescriptor getStandardMetaModel() {
         return metaModels.get(GenericConstants.META_MODEL_STANDARD);
     }
 

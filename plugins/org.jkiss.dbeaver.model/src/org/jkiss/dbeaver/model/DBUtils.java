@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model;
 
@@ -255,47 +254,50 @@ public final class DBUtils {
         @Nullable String objectName)
         throws DBException
     {
-        if (!CommonUtils.isEmpty(catalogName)) {
+        if (!CommonUtils.isEmpty(catalogName) && !CommonUtils.isEmpty(schemaName)) {
+            // We have both both - just search both
             DBSObject catalog = rootSC.getChild(monitor, catalogName);
             if (!(catalog instanceof DBSObjectContainer)) {
                 return null;
             }
             rootSC = (DBSObjectContainer) catalog;
-        } else {
-            DBSObjectSelector objectSelector = DBUtils.getAdapter(DBSObjectSelector.class, rootSC);
-            if (objectSelector != null) {
-                final DBSObject so = objectSelector.getDefaultObject();
-                if (so instanceof DBSCatalog) {
-                    rootSC = (DBSObjectContainer) so;
-                }
-            }
-        }
-        if (!CommonUtils.isEmpty(schemaName)) {
             DBSObject schema = rootSC.getChild(monitor, schemaName);
             if (!(schema instanceof DBSObjectContainer)) {
                 return null;
             }
             rootSC = (DBSObjectContainer) schema;
+        } else if (!CommonUtils.isEmpty(catalogName) || !CommonUtils.isEmpty(schemaName)) {
+            // One container name
+            String containerName = !CommonUtils.isEmpty(catalogName) ? catalogName : schemaName;
+            DBSObject sc = rootSC.getChild(monitor, containerName);
+            if (!(sc instanceof DBSObjectContainer)) {
+                // Not found - try to find in selected object
+                DBSObject selectedObject = getSelectedObject(rootSC, false);
+                if (selectedObject instanceof DBSObjectContainer) {
+                    sc = ((DBSObjectContainer) selectedObject).getChild(monitor, containerName);
+                }
+                if (!(sc instanceof DBSObjectContainer)) {
+                    return null;
+                }
+            }
+            rootSC = (DBSObjectContainer) sc;
         }
         if (objectName == null) {
             return rootSC;
         }
-        Class<? extends DBSObject> childType = rootSC.getChildType(monitor);
-        if (DBSTable.class.isAssignableFrom(childType)) {
-            return rootSC.getChild(monitor, objectName);
+        final DBSObject object = rootSC.getChild(monitor, objectName);
+        if (object instanceof DBSEntity) {
+            return object;
         } else {
-            // Child is not a table. May be catalog/schema names was omitted.
-            // Try to use active child
-            DBSObjectSelector objectSelector = DBUtils.getAdapter(DBSObjectSelector.class, rootSC);
-            if (objectSelector != null) {
-                DBSObjectContainer objectContainer = DBUtils.getAdapter(DBSObjectContainer.class, objectSelector.getDefaultObject());
-                if (objectContainer != null) {
-                    return objectContainer.getChild(monitor, objectName);
-                }
+            // Child is not an entity. May be catalog/schema names was omitted.
+            // Try to use selected object
+            DBSObject selectedObject = DBUtils.getSelectedObject(rootSC, true);
+            if (selectedObject instanceof DBSObjectContainer) {
+                return ((DBSObjectContainer) selectedObject).getChild(monitor, objectName);
             }
 
             // Table container not found
-            return null;
+            return object;
         }
     }
 
@@ -587,6 +589,9 @@ public final class DBUtils {
     @Nullable
     public static DBDAttributeBinding findBinding(@NotNull DBDAttributeBinding[] bindings, @Nullable DBSAttributeBase attribute)
     {
+        if (attribute == null) {
+            return null;
+        }
         for (DBDAttributeBinding binding : bindings) {
             if (binding.matches(attribute, true)) {
                 return binding;
@@ -852,7 +857,7 @@ public final class DBUtils {
         long offset,
         long maxRows) throws DBCException
     {
-        SQLQuery sqlQuery = new SQLQuery(query);
+        SQLQuery sqlQuery = new SQLQuery(session.getDataSource(), query);
         return makeStatement(
             executionSource,
             session,
@@ -899,7 +904,7 @@ public final class DBUtils {
         } else if (fetchAllTransformer != null) {
             queryText = fetchAllTransformer.transformQueryString(sqlQuery);
         } else {
-            queryText = sqlQuery.getQuery();
+            queryText = sqlQuery.getText();
         }
 
         DBCStatement dbStat = statementType == DBCStatementType.SCRIPT ?
@@ -1045,6 +1050,18 @@ public final class DBUtils {
         return dataTypeProvider.resolveDataType(monitor, fullTypeName);
     }
 
+    @Nullable
+    public static DBSDataType getLocalDataType(
+        @NotNull DBPDataSource dataSource,
+        @NotNull String fullTypeName)
+    {
+        DBPDataTypeProvider dataTypeProvider = getAdapter(DBPDataTypeProvider.class, dataSource);
+        if (dataTypeProvider == null) {
+            return null;
+        }
+        return dataTypeProvider.getLocalDataType(fullTypeName);
+    }
+
     public static DBPObject getPublicObject(@NotNull DBPObject object)
     {
         if (object instanceof DBPDataSourceContainer) {
@@ -1058,13 +1075,13 @@ public final class DBUtils {
     public static DBPDataSourceContainer getContainer(@Nullable DBSObject object)
     {
         if (object == null) {
-            log.warn("Null object passed");
             return null;
         }
         if (object instanceof DBPDataSourceContainer) {
             return (DBPDataSourceContainer) object;
         }
-        return object.getDataSource().getContainer();
+        final DBPDataSource dataSource = object.getDataSource();
+        return dataSource == null ? null : dataSource.getContainer();
     }
 
     @NotNull
@@ -1147,7 +1164,7 @@ public final class DBUtils {
         if (attribute instanceof DBSTypedObjectEx) {
             DBSDataType dataType = ((DBSTypedObjectEx) attribute).getDataType();
             if (dataType != null) {
-                return dataType.getSupportedOperators();
+                return dataType.getSupportedOperators(attribute);
             }
         }
         return getDefaultOperators(attribute);
@@ -1346,6 +1363,15 @@ public final class DBUtils {
         };
     }
 
+    public static Comparator<? super DBSAttributeBase> orderComparator() {
+        return new Comparator<DBSAttributeBase>() {
+            @Override
+            public int compare(DBSAttributeBase o1, DBSAttributeBase o2) {
+                return o1.getOrdinalPosition() - o2.getOrdinalPosition();
+            }
+        };
+    }
+
     public static <T extends DBPNamedObject> void orderObjects(@NotNull List<T> objects)
     {
         Collections.sort(objects, new Comparator<T>() {
@@ -1358,5 +1384,23 @@ public final class DBUtils {
                         (name2 == null ? 1 : name1.compareTo(name2)));
             }
         });
+    }
+
+    public static String getClientApplicationName(DBPDataSourceContainer container, String purpose) {
+        if (container.getPreferenceStore().getBoolean(ModelPreferences.META_CLIENT_NAME_OVERRIDE)) {
+            return container.getPreferenceStore().getString(ModelPreferences.META_CLIENT_NAME_VALUE);
+        }
+        final String productTitle = GeneralUtils.getProductTitle();
+        return purpose == null ? productTitle : productTitle + " - " + purpose;
+    }
+
+    @NotNull
+    public static DBPErrorAssistant.ErrorType discoverErrorType(@NotNull DBPDataSource dataSource, @NotNull Throwable error) {
+        DBPErrorAssistant errorAssistant = getAdapter(DBPErrorAssistant.class, dataSource);
+        if (errorAssistant != null) {
+            return ((DBPErrorAssistant) dataSource).discoverErrorType(error);
+        }
+
+        return DBPErrorAssistant.ErrorType.NORMAL;
     }
 }

@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.text;
 
@@ -21,26 +20,22 @@ package org.jkiss.dbeaver.ui.editors.text;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
-import org.eclipse.jface.text.ITextViewer;
-import org.eclipse.jface.text.JFaceTextUtil;
 import org.eclipse.jface.text.source.AbstractRulerColumn;
-import org.eclipse.jface.text.source.ILineRange;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.ui.progress.UIJob;
 import org.eclipse.ui.texteditor.ITextEditor;
 import org.eclipse.ui.texteditor.rulers.IContributedRulerColumn;
 import org.eclipse.ui.texteditor.rulers.RulerColumnDescriptor;
+import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.utils.ArrayUtils;
-import org.jkiss.utils.CommonUtils;
+
+import java.util.Arrays;
 
 /**
- * The line number ruler contribution. Encapsulates a {@link org.eclipse.jface.text.source.LineNumberChangeRulerColumn} as a
- * contribution to the <code>rulerColumns</code> extension point.
- *
- * @since 3.3
+ * Script position ruler contribution.
  */
 public class ScriptPositionColumn extends AbstractRulerColumn implements IContributedRulerColumn {
 
@@ -91,14 +86,19 @@ public class ScriptPositionColumn extends AbstractRulerColumn implements IContri
             @Override
             public IStatus runInUIThread(IProgressMonitor monitor)
             {
+                if (DBeaverCore.isClosing()) {
+                    return Status.CANCEL_STATUS;
+                }
                 BaseTextEditor editor = (BaseTextEditor)getEditor();
                 if (editor == null || editor.getTextViewer() == null) return Status.CANCEL_STATUS;
                 StyledText textWidget = editor.getTextViewer().getTextWidget();
                 if (textWidget == null || textWidget.isDisposed()) return Status.CANCEL_STATUS;
-                int[] newCurrentLines = editor.getCurrentLines();
-                if (!CommonUtils.equalObjects(newCurrentLines, currentLines) && textWidget.isVisible()) {
-                    currentLines = newCurrentLines;
-                    redraw();
+                if (textWidget.isVisible()) {
+                    int[] newCurrentLines = editor.getCurrentLines();
+                    if (!Arrays.equals(newCurrentLines, currentLines)) {
+                        currentLines = newCurrentLines;
+                        redraw();
+                    }
                 }
                 if (visible) {
                     schedule(100);
@@ -114,6 +114,15 @@ public class ScriptPositionColumn extends AbstractRulerColumn implements IContri
         visible = false;
     }
 
+    protected void paintLine(GC gc, int modelLine, int widgetLine, int linePixel, int lineHeight) {
+        gc.setBackground(computeBackground(modelLine));
+        gc.fillRectangle(0, linePixel, getWidth(), lineHeight);
+        if (ArrayUtils.contains(currentLines, modelLine)) {
+            gc.drawImage(DBeaverIcons.getImage(UIIcon.RULER_POSITION), 0, linePixel);
+        }
+    }
+
+/*
     @Override
     protected void paint(GC gc, ILineRange lines)
     {
@@ -135,5 +144,6 @@ public class ScriptPositionColumn extends AbstractRulerColumn implements IContri
             }
         }
     }
+*/
 
 }

@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.edit;
 
@@ -55,7 +54,8 @@ public class PostgreConstraintManager extends SQLConstraintManager<PostgreTableC
                     parent,
                     new DBSEntityConstraintType[] {
                         DBSEntityConstraintType.PRIMARY_KEY,
-                        DBSEntityConstraintType.UNIQUE_KEY });
+                        DBSEntityConstraintType.UNIQUE_KEY,
+                        DBSEntityConstraintType.CHECK });
                 if (!editPage.edit()) {
                     return null;
                 }
@@ -64,13 +64,17 @@ public class PostgreConstraintManager extends SQLConstraintManager<PostgreTableC
                     parent,
                     editPage.getConstraintName(),
                     editPage.getConstraintType());
-                int colIndex = 1;
-                for (DBSEntityAttribute tableColumn : editPage.getSelectedAttributes()) {
-                    constraint.addColumn(
-                        new PostgreTableConstraintColumn(
-                            constraint,
-                            (PostgreAttribute) tableColumn,
-                            colIndex++));
+                if (constraint.getConstraintType().isCustom()) {
+                    constraint.setSource(editPage.getConstraintExpression());
+                } else {
+                    int colIndex = 1;
+                    for (DBSEntityAttribute tableColumn : editPage.getSelectedAttributes()) {
+                        constraint.addColumn(
+                            new PostgreTableConstraintColumn(
+                                constraint,
+                                (PostgreAttribute) tableColumn,
+                                colIndex++));
+                    }
                 }
                 return constraint;
             }
@@ -88,7 +92,7 @@ public class PostgreConstraintManager extends SQLConstraintManager<PostgreTableC
     @Override
     protected void appendConstraintDefinition(StringBuilder decl, DBECommandAbstract<PostgreTableConstraintBase> command) {
         if (command.getObject().getConstraintType() == DBSEntityConstraintType.CHECK) {
-            decl.append(((PostgreTableConstraint) command.getObject()).getSource());
+            decl.append(" (").append(((PostgreTableConstraint) command.getObject()).getSource()).append(")");
         } else {
             super.appendConstraintDefinition(decl, command);
         }

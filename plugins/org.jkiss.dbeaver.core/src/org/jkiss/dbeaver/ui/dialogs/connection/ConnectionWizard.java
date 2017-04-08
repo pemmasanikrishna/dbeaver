@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.dialogs.connection;
 
@@ -25,9 +24,6 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.wizard.Wizard;
 import org.eclipse.osgi.util.NLS;
-import org.eclipse.swt.SWT;
-import org.eclipse.swt.graphics.Point;
-import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.INewWizard;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
@@ -35,18 +31,18 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceInfo;
-import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
 import org.jkiss.dbeaver.model.DBUtils;
+import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.registry.DataSourceDescriptor;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
-import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.dbeaver.runtime.jobs.ConnectJob;
 import org.jkiss.dbeaver.runtime.jobs.DisconnectJob;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.utils.GeneralUtils;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
@@ -106,12 +102,21 @@ public abstract class ConnectionWizard extends Wizard implements INewWizard {
         return info;
     }
 
+    public DataSourceDescriptor getOriginalDataSource() {
+        return null;
+    }
+
+
     public void testConnection()
     {
         DataSourceDescriptor dataSource = getPageSettings().getActiveDataSource();
         DataSourceDescriptor testDataSource = new DataSourceDescriptor(dataSource);
+        saveSettings(testDataSource);
+
+        // Generate new ID to avoid session conflicts in QM
+        testDataSource.setId(DataSourceDescriptor.generateNewId(dataSource.getDriver()));
+
         try {
-            saveSettings(testDataSource);
 
             final ConnectionTester op = new ConnectionTester(testDataSource);
 
@@ -135,6 +140,9 @@ public abstract class ConnectionWizard extends Wizard implements INewWizard {
                         }
                         if (op.getConnectError() != null) {
                             throw new InvocationTargetException(op.getConnectError());
+                        }
+                        if (op.getConnectStatus() == Status.CANCEL_STATUS) {
+                            throw new InterruptedException();
                         }
                     }
                 });
@@ -173,19 +181,6 @@ public abstract class ConnectionWizard extends Wizard implements INewWizard {
         return false;
     }
 
-    public void resizeShell() {
-        if (!resized) {
-            Shell shell = getContainer().getShell();
-            Point shellSize = shell.getSize();
-            Point compSize = shell.computeSize(SWT.DEFAULT, SWT.DEFAULT);
-            if (shellSize.y < compSize.y) {
-                shell.setSize(compSize);
-                shell.layout(true);
-            }
-            resized = true;
-        }
-    }
-
     private class ConnectionTester extends ConnectJob {
         String productName;
         String productVersion;
@@ -220,6 +215,9 @@ public abstract class ConnectionWizard extends Wizard implements INewWizard {
                 connectTime = (System.currentTimeMillis() - startTime);
                 if (connectError != null || monitor.isCanceled()) {
                     return Status.OK_STATUS;
+                }
+                if (connectStatus == Status.CANCEL_STATUS) {
+                    return Status.CANCEL_STATUS;
                 }
 
                 monitor.worked(1);

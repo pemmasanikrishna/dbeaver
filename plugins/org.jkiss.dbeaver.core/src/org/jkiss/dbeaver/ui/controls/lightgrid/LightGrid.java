@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls.lightgrid;
 
@@ -271,6 +270,7 @@ public abstract class LightGrid extends Canvas {
 
     @NotNull
     private Color lineColor;
+    private Color lineSelectedColor;
     private Color backgroundColor;
     private Color foregroundColor;
     @NotNull
@@ -382,6 +382,7 @@ public abstract class LightGrid extends Canvas {
 
         final Display display = getDisplay();
         lineColor = JFaceColors.getErrorBackground(display);
+        lineSelectedColor = JFaceColors.getErrorBorder(display);//SWT.COLOR_WIDGET_DARK_SHADOW;
         //setForeground(JFaceColors.getBannerForeground(display));
         //setBackground(JFaceColors.getBannerBackground(display));
 /*
@@ -570,6 +571,9 @@ public abstract class LightGrid extends Canvas {
                 }
             }
         }
+        // Recalculate indexes, sizes and update scrollbars
+        topIndex = -1;
+        bottomIndex = -1;
         recalculateSizes();
         updateScrollbars();
 
@@ -602,6 +606,9 @@ public abstract class LightGrid extends Canvas {
     private Rectangle getCurrentOrLastClientArea() {
         Rectangle clientArea = getClientArea();
         if (clientArea.width == 0) {
+            if (lastClientArea == null) {
+                return clientArea;
+            }
             return lastClientArea;
         }
         lastClientArea = clientArea;
@@ -972,9 +979,20 @@ public abstract class LightGrid extends Canvas {
      * @return Returns the lineColor.
      */
     @NotNull
-    public Color getLineColor()
-    {
+    public Color getLineColor() {
         return lineColor;
+    }
+
+    public void setLineColor(@NotNull Color lineColor) {
+        this.lineColor = lineColor;
+    }
+
+    public Color getLineSelectedColor() {
+        return lineSelectedColor;
+    }
+
+    public void setLineSelectedColor(Color lineSelectedColor) {
+        this.lineSelectedColor = lineSelectedColor;
     }
 
     /**
@@ -1462,16 +1480,6 @@ public abstract class LightGrid extends Canvas {
     }
 
     /**
-     * Sets the line color.
-     *
-     * @param lineColor The lineColor to set.
-     */
-    public void setLineColor(@NotNull Color lineColor)
-    {
-        this.lineColor = lineColor;
-    }
-
-    /**
      * Sets the line visibility.
      *
      * @param linesVisible Te linesVisible to set.
@@ -1943,23 +1951,25 @@ public abstract class LightGrid extends Canvas {
                     overSorter = true;
                 }
             } else {
-                for (GridColumn column : columns) {
-                    if (x >= x2 && x <= x2 + column.getWidth()) {
-                        hoveringOnHeader = true;
-                        if (column.isOverSortArrow(x - x2, y)) {
-                            overSorter = true;
-                            columnBeingSorted = column;
-                            break;
-                        }
-                        x2 += column.getWidth();
-                        if (x2 >= (x - COLUMN_RESIZER_THRESHOLD) && x2 <= (x + COLUMN_RESIZER_THRESHOLD)) {
-                            overResizer = true;
+                if (x > getRowHeaderWidth()) {
+                    for (GridColumn column : columns) {
+                        if (x >= x2 && x <= x2 + column.getWidth()) {
+                            hoveringOnHeader = true;
+                            if (column.isOverSortArrow(x - x2, y)) {
+                                overSorter = true;
+                                columnBeingSorted = column;
+                                break;
+                            }
+                            x2 += column.getWidth();
+                            if (x2 >= (x - COLUMN_RESIZER_THRESHOLD) && x2 <= (x + COLUMN_RESIZER_THRESHOLD)) {
+                                overResizer = true;
 
-                            columnBeingResized = column;
-                            break;
+                                columnBeingResized = column;
+                                break;
+                            }
+                        } else {
+                            x2 += column.getWidth();
                         }
-                    } else {
-                        x2 += column.getWidth();
                     }
                 }
             }
@@ -2067,7 +2077,7 @@ public abstract class LightGrid extends Canvas {
         final GridPos testPos = new GridPos(-1, -1);
         final Rectangle cellBounds = new Rectangle(0, 0, 0, 0);
 
-        for (int i = 0; i < visibleRows + (firstVisibleIndex - firstVisibleIndex); i++) {
+        for (int i = 0; i < visibleRows; i++) {
 
             int x = 0;
 
@@ -3439,7 +3449,7 @@ public abstract class LightGrid extends Canvas {
             showItem(newSelection);
 
             GridCell newPos;
-            if (newSelection >= 0) {
+            if (newSelection >= 0 && newSelection < rowElements.length) {
                 newPos = new GridCell(newColumnFocus.getElement(), rowElements[newSelection]);
             } else {
                 newPos = null;
@@ -3605,7 +3615,7 @@ public abstract class LightGrid extends Canvas {
                 // get column header specific tooltip
                 newTip = hoveringColumn.getHeaderTooltip();
             } else if (rowHeaderVisible && hoveringItem >= 0 && x <= rowHeaderWidth) {
-                newTip = getLabelProvider().getTooltip(getRowElement(hoveringItem));
+                newTip = getLabelProvider().getToolTipText(getRowElement(hoveringItem));
             }
 
             //Avoid unnecessarily resetting tooltip - this will cause the tooltip to jump around

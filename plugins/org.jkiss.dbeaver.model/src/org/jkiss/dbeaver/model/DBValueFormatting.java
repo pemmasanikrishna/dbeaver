@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.model;
 
@@ -37,9 +36,6 @@ import java.math.BigInteger;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.ParseException;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Locale;
 
 /**
@@ -102,7 +98,7 @@ public final class DBValueFormatting {
             case ROWID:
                 return DBIcon.TYPE_ROWID;
             case OBJECT:
-                if (typeName.contains(DBConstants.TYPE_NAME_UUID) || typeName.contains(DBConstants.TYPE_NAME_UUID2)) {
+                if (typeName != null && (typeName.contains(DBConstants.TYPE_NAME_UUID) || typeName.contains(DBConstants.TYPE_NAME_UUID2))) {
                     return DBIcon.TYPE_UUID;
                 }
                 return DBIcon.TYPE_OBJECT;
@@ -225,6 +221,10 @@ public final class DBValueFormatting {
     }
 
     public static String formatBinaryString(@NotNull DBPDataSource dataSource, @NotNull byte[] data, @NotNull DBDDisplayFormat format) {
+        return formatBinaryString(dataSource, data, format, false);
+    }
+
+    public static String formatBinaryString(@NotNull DBPDataSource dataSource, @NotNull byte[] data, @NotNull DBDDisplayFormat format, boolean forceLimit) {
         DBDBinaryFormatter formatter;
         if (format == DBDDisplayFormat.NATIVE && dataSource instanceof SQLDataSource) {
             formatter = ((SQLDataSource) dataSource).getSQLDialect().getNativeBinaryFormatter();
@@ -233,14 +233,15 @@ public final class DBValueFormatting {
         }
         // Convert bytes to string
         int length = data.length;
-        if (format == DBDDisplayFormat.UI) {
+        if (format == DBDDisplayFormat.UI || forceLimit) {
             int maxLength = dataSource.getContainer().getPreferenceStore().getInt(ModelPreferences.RESULT_SET_BINARY_STRING_MAX_LEN);
             if (length > maxLength) {
                 length = maxLength;
             }
         }
         String string = formatter.toString(data, 0, length);
-        if (length == data.length) {
+        if (format == DBDDisplayFormat.NATIVE || length == data.length) {
+            // Do not append ... for native formatter - it may contain expressions
             return string;
         }
         return string + "..." + " [" + data.length + "]";
@@ -262,7 +263,10 @@ public final class DBValueFormatting {
         if (value.getClass().isArray()) {
             if (value.getClass().getComponentType() == Byte.TYPE) {
                 byte[] bytes = (byte[]) value;
-                return CommonUtils.toHexString(bytes, 0, 2000);
+                int length = bytes.length;
+                if (length > 2000) length = 2000;
+                String string = CommonUtils.toHexString(bytes, 0, length);
+                return bytes.length > 2000 ? string + "..." : string;
             } else {
                 return GeneralUtils.makeDisplayString(value).toString();
             }

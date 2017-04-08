@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.editors.entity;
 
@@ -35,17 +34,16 @@ import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreMessages;
+import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.core.DBeaverUI;
-import org.jkiss.dbeaver.model.DBPDataSourceContainer;
-import org.jkiss.dbeaver.model.DBPObject;
-import org.jkiss.dbeaver.model.DBPStatefulObject;
-import org.jkiss.dbeaver.model.IDataSourceContainerProvider;
+import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.edit.DBECommand;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.impl.edit.DBECommandAdapter;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
+import org.jkiss.dbeaver.model.navigator.DBNEvent;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
 import org.jkiss.dbeaver.model.runtime.*;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
@@ -54,7 +52,6 @@ import org.jkiss.dbeaver.registry.editor.EntityEditorDescriptor;
 import org.jkiss.dbeaver.registry.editor.EntityEditorsRegistry;
 import org.jkiss.dbeaver.ui.*;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerObjectOpen;
-import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerRefresh;
 import org.jkiss.dbeaver.ui.controls.ProgressPageControl;
 import org.jkiss.dbeaver.ui.controls.PropertyPageStandard;
 import org.jkiss.dbeaver.ui.controls.folders.ITabbedFolder;
@@ -232,14 +229,8 @@ public class EntityEditor extends MultiPageDatabaseEditor
                 saveJob.schedule();
 
                 // Wait until job finished
-                Display display = Display.getCurrent();
-                while (saveJob.finished == null) {
-                    if (!display.readAndDispatch()) {
-                        display.sleep();
-                    }
-                }
-                display.update();
-                if (!saveJob.finished) {
+                UIUtils.waitJobCompletion(saveJob);
+                if (!saveJob.success) {
                     monitor.setCanceled(true);
                     return;
                 }
@@ -254,65 +245,89 @@ public class EntityEditor extends MultiPageDatabaseEditor
         }
     }
 
-    private boolean saveCommandContext(DBRProgressMonitor monitor)
+    private boolean saveCommandContext(final DBRProgressMonitor monitor)
     {
-        monitor.beginTask(CoreMessages.editors_entity_monitor_preview_changes, 1);
-        int previewResult = showChanges(true);
-        monitor.done();
+        int previewResult = IDialogConstants.PROCEED_ID;
+        if (DBeaverCore.getGlobalPreferenceStore().getBoolean(DBeaverPreferences.NAVIGATOR_SHOW_SQL_PREVIEW)) {
+            monitor.beginTask(CoreMessages.editors_entity_monitor_preview_changes, 1);
+            previewResult = showChanges(true);
+            monitor.done();
+        }
 
-
-        if (previewResult == IDialogConstants.PROCEED_ID) {
-            Throwable error = null;
-            final DBECommandContext commandContext = getCommandContext();
-            if (commandContext == null) {
-                log.warn("Null command context");
-                return true;
-            }
+        if (previewResult != IDialogConstants.PROCEED_ID) {
+            return true;
+        }
+        monitor.beginTask("Save entity", 1);
+        Throwable error = null;
+        final DBECommandContext commandContext = getCommandContext();
+        if (commandContext == null) {
+            log.warn("Null command context");
+            return true;
+        }
+        try {
+            commandContext.saveChanges(monitor);
+        } catch (DBException e) {
+            error = e;
+        }
+        if (getDatabaseObject() instanceof DBPStatefulObject) {
             try {
-                commandContext.saveChanges(monitor);
-            } catch (DBException e) {
-                error = e;
-            }
-            if (getDatabaseObject() instanceof DBPStatefulObject) {
-                try {
-                    ((DBPStatefulObject) getDatabaseObject()).refreshObjectState(monitor);
-                } catch (DBCException e) {
-                    // Just report an error
-                    log.error(e);
-                }
-            }
-
-            if (error == null) {
-                // Refresh underlying node
-                // It'll refresh database object and all it's descendants
-                // So we'll get actual data from database
-                final DBNDatabaseNode treeNode = getEditorInput().getNavigatorNode();
-                try {
-                    DBeaverUI.runInProgressService(new DBRRunnableWithProgress() {
-                        @Override
-                        public void run(DBRProgressMonitor monitor) throws InvocationTargetException, InterruptedException
-                        {
-                            try {
-                                treeNode.refreshNode(monitor, NavigatorHandlerRefresh.FORCE_REFRESH);
-                            } catch (DBException e) {
-                                throw new InvocationTargetException(e);
-                            }
-                        }
-                    });
-                } catch (InvocationTargetException e) {
-                    error = e.getTargetException();
-                } catch (InterruptedException e) {
-                    // ok
-                }
-            }
-            if (error == null) {
-                return true;
-            } else {
-                UIUtils.showErrorDialog(getSite().getShell(), "Can't save '" + getDatabaseObject().getName() + "'", null, error);
-                return false;
+                ((DBPStatefulObject) getDatabaseObject()).refreshObjectState(monitor);
+            } catch (DBCException e) {
+                // Just report an error
+                log.error(e);
             }
         }
-        return true;
+
+        if (error == null) {
+            // Refresh underlying node
+            // It'll refresh database object and all it's descendants
+            // So we'll get actual data from database
+            final DBNDatabaseNode treeNode = getEditorInput().getNavigatorNode();
+            try {
+                DBeaverUI.runInProgressService(new DBRRunnableWithProgress() {
+                    @Override
+                    public void run(DBRProgressMonitor monitor) throws InvocationTargetException, InterruptedException
+                    {
+                        try {
+                            treeNode.refreshNode(monitor, DBNEvent.FORCE_REFRESH);
+                        } catch (DBException e) {
+                            throw new InvocationTargetException(e);
+                        }
+                    }
+                });
+            } catch (InvocationTargetException e) {
+                error = e.getTargetException();
+            } catch (InterruptedException e) {
+                // ok
+            }
+        }
+        monitor.done();
+
+        if (error == null) {
+            return true;
+        } else {
+            // Try to handle error in nested editors
+            final Throwable vError = error;
+            DBeaverUI.syncExec(new Runnable() {
+                @Override
+                public void run() {
+                    final IErrorVisualizer errorVisualizer = getAdapter(IErrorVisualizer.class);
+                    if (errorVisualizer != null) {
+                        errorVisualizer.visualizeError(monitor, vError);
+                    }
+                }
+            });
+
+            // Show error dialog
+
+            DBeaverUI.asyncExec(new Runnable() {
+                @Override
+                public void run() {
+                    UIUtils.showErrorDialog(getSite().getShell(), "Can't save '" + getDatabaseObject().getName() + "'", null, vError);
+                }
+            });
+            return false;
+        }
     }
 
     public void revertChanges()
@@ -744,12 +759,12 @@ public class EntityEditor extends MultiPageDatabaseEditor
     public <T> T getNestedAdapter(Class<T> adapter) {
         IEditorPart activeEditor = getActiveEditor();
         if (activeEditor != null) {
-            if (adapter.isAssignableFrom(activeEditor.getClass())) {
-                return adapter.cast(activeEditor);
-            }
             Object result = activeEditor.getAdapter(adapter);
             if (result != null) {
                 return adapter.cast(result);
+            }
+            if (adapter.isAssignableFrom(activeEditor.getClass())) {
+                return adapter.cast(activeEditor);
             }
         }
         return null;
@@ -780,11 +795,12 @@ public class EntityEditor extends MultiPageDatabaseEditor
 
     @Override
     public DBPDataSourceContainer getDataSourceContainer() {
-        DBSObject databaseObject = getDatabaseObject();
-        return databaseObject == null ? null :
-            databaseObject instanceof DBPDataSourceContainer ?
-                (DBPDataSourceContainer)databaseObject :
-                databaseObject.getDataSource().getContainer();
+        return DBUtils.getContainer(getDatabaseObject());
+    }
+
+    @Override
+    public void recreateEditorControl() {
+        recreatePages();
     }
 
     private static final int MAX_BREADCRUMBS_MENU_ITEM = 300;
@@ -882,7 +898,7 @@ public class EntityEditor extends MultiPageDatabaseEditor
     }
 
     private class SaveJob extends AbstractJob {
-        private transient Boolean finished = null;
+        private transient Boolean success = null;
 
         public SaveJob() {
             super("Save '" + getPartName() + "' changes...");
@@ -908,19 +924,19 @@ public class EntityEditor extends MultiPageDatabaseEditor
 
                 final DBECommandContext commandContext = getCommandContext();
                 if (commandContext != null && commandContext.isDirty()) {
-                    finished = saveCommandContext(monitor);
+                    success = saveCommandContext(monitor);
                 } else {
-                    finished = true;
+                    success = true;
                 }
 
-                return finished ? Status.OK_STATUS : Status.CANCEL_STATUS;
+                return success ? Status.OK_STATUS : Status.CANCEL_STATUS;
             } catch (Throwable e) {
-                finished = false;
+                success = false;
                 log.error(e);
                 return GeneralUtils.makeExceptionStatus(e);
             } finally {
-                if (finished == null) {
-                    finished = true;
+                if (success == null) {
+                    success = true;
                 }
             }
         }

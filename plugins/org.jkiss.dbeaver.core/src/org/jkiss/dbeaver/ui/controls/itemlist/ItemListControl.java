@@ -1,24 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.controls.itemlist;
 
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IContributionManager;
+import org.eclipse.jface.action.Separator;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
@@ -26,18 +26,23 @@ import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.ui.IWorkbenchCommandConstants;
 import org.eclipse.ui.IWorkbenchSite;
-import org.jkiss.code.NotNull;
+import org.eclipse.ui.part.MultiPageEditorPart;
+import org.eclipse.ui.part.MultiPageEditorSite;
+import org.jkiss.dbeaver.core.CoreCommands;
+import org.jkiss.dbeaver.model.edit.DBEObjectReorderer;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
+import org.jkiss.dbeaver.model.navigator.meta.DBXTreeNode;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.load.DatabaseLoadService;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.DBSWrapper;
-import org.jkiss.dbeaver.model.navigator.meta.DBXTreeNode;
-import org.jkiss.dbeaver.model.runtime.load.DatabaseLoadService;
+import org.jkiss.dbeaver.registry.editor.EntityEditorsRegistry;
+import org.jkiss.dbeaver.runtime.properties.ObjectPropertyDescriptor;
 import org.jkiss.dbeaver.ui.*;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerFilterConfig;
-import org.jkiss.dbeaver.runtime.properties.ObjectPropertyDescriptor;
+import org.jkiss.dbeaver.ui.editors.entity.EntityEditor;
 import org.jkiss.dbeaver.ui.navigator.NavigatorUtils;
 import org.jkiss.utils.ArrayUtils;
 
@@ -79,37 +84,90 @@ public class ItemListControl extends NodeListControl
     protected void fillCustomActions(IContributionManager contributionManager)
     {
         super.fillCustomActions(contributionManager);
-        if (getRootNode() instanceof DBNDatabaseFolder && ((DBNDatabaseFolder)getRootNode()).getItemsMeta() != null) {
+        final DBNNode rootNode = getRootNode();
+        if (rootNode instanceof DBNDatabaseFolder && ((DBNDatabaseFolder) rootNode).getItemsMeta() != null) {
             contributionManager.add(new Action(
-                "Filter",
+                "Filter settings",
                 DBeaverIcons.getImageDescriptor(UIIcon.FILTER))
             {
                 @Override
                 public void run()
                 {
-                    NavigatorHandlerFilterConfig.configureFilters(getShell(), getRootNode());
+                    NavigatorHandlerFilterConfig.configureFilters(getShell(), rootNode);
                 }
             });
+        }
+        {
+            Action configColumnsAction = new Action(
+                    "Configure columns",
+                    DBeaverIcons.getImageDescriptor(UIIcon.CONFIGURATION)) {
+                @Override
+                public void run() {
+                    columnController.configureColumns();
+                }
+            };
+            configColumnsAction.setDescription("Configure columns visibility");
+            contributionManager.add(configColumnsAction);
         }
         IWorkbenchSite workbenchSite = getWorkbenchSite();
         if (workbenchSite != null) {
             contributionManager.add(ActionUtils.makeCommandContribution(workbenchSite, IWorkbenchCommandConstants.FILE_REFRESH));
         }
-        contributionManager.add(new Action(
-            "Pack columns",
-            DBeaverIcons.getImageDescriptor(UIIcon.TREE_EXPAND))
-        {
-            @Override
-            public void run()
-            {
-                ColumnViewer itemsViewer = getItemsViewer();
-                if (itemsViewer instanceof TreeViewer) {
-                    UIUtils.packColumns(((TreeViewer) itemsViewer).getTree());
-                } else {
-                    UIUtils.packColumns(((TableViewer) itemsViewer).getTable());
+
+
+        if (rootNode instanceof DBNDatabaseNode) {
+            contributionManager.add(new Separator());
+            contributionManager.add(ActionUtils.makeCommandContribution(
+                workbenchSite,
+                CoreCommands.CMD_OBJECT_OPEN));
+            contributionManager.add(ActionUtils.makeCommandContribution(
+                workbenchSite,
+                CoreCommands.CMD_OBJECT_CREATE));
+            contributionManager.add(ActionUtils.makeCommandContribution(
+                workbenchSite,
+                CoreCommands.CMD_OBJECT_DELETE));
+        }
+
+        if (rootNode instanceof DBNDatabaseNode && rootNode.isPersisted()) {
+            boolean hasReorder = false;
+            List<Class<?>> childrenTypes = ((DBNDatabaseNode) rootNode).getChildrenTypes(null);
+            for (Class<?> chilType : childrenTypes) {
+                if (EntityEditorsRegistry.getInstance().getObjectManager(chilType, DBEObjectReorderer.class) != null) {
+                    hasReorder = true;
+                    break;
                 }
             }
-        });
+            if (hasReorder) {
+                contributionManager.add(new Separator());
+                contributionManager.add(ActionUtils.makeCommandContribution(
+                    workbenchSite,
+                    CoreCommands.CMD_OBJECT_MOVE_UP));
+                contributionManager.add(ActionUtils.makeCommandContribution(
+                    workbenchSite,
+                    CoreCommands.CMD_OBJECT_MOVE_DOWN));
+            }
+        }
+
+        if (workbenchSite instanceof MultiPageEditorSite) {
+            final MultiPageEditorPart editor = ((MultiPageEditorSite) workbenchSite).getMultiPageEditor();
+            if (editor instanceof EntityEditor) {
+                contributionManager.add(new Separator());
+                contributionManager.add(ActionUtils.makeCommandContribution(
+                    workbenchSite,
+                    IWorkbenchCommandConstants.FILE_SAVE,
+                    null,
+                    UIIcon.SAVE,
+                    null,
+                    true));
+                contributionManager.add(ActionUtils.makeCommandContribution(
+                    workbenchSite,
+                    IWorkbenchCommandConstants.FILE_REVERT,
+                    null,
+                    UIIcon.RESET,
+                    null,
+                    true));
+            }
+        }
     }
 
     @Override
@@ -367,4 +425,20 @@ public class ItemListControl extends NodeListControl
         }
     }
 
+    private class PackColumnsAction extends Action {
+        public PackColumnsAction() {
+            super("Pack columns", DBeaverIcons.getImageDescriptor(UIIcon.TREE_EXPAND));
+        }
+
+        @Override
+        public void run()
+        {
+            ColumnViewer itemsViewer = getItemsViewer();
+            if (itemsViewer instanceof TreeViewer) {
+                UIUtils.packColumns(((TreeViewer) itemsViewer).getTree());
+            } else {
+                UIUtils.packColumns(((TableViewer) itemsViewer).getTable());
+            }
+        }
+    }
 }

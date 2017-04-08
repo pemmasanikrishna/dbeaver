@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.runtime.qm;
 
@@ -31,6 +30,7 @@ import org.jkiss.dbeaver.model.qm.QMMetaListener;
 import org.jkiss.dbeaver.model.qm.meta.*;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.AbstractJob;
+import org.jkiss.utils.LongKeyMap;
 
 import java.util.*;
 
@@ -44,10 +44,18 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
     private static final long EVENT_DISPATCH_PERIOD = 250;
     private static final int MAX_HISTORY_EVENTS = 1000;
 
-    private Map<String, QMMSessionInfo> sessionMap = new HashMap<>();
+    // Session map
+    private LongKeyMap<QMMSessionInfo> sessionMap = new LongKeyMap<>();
+    private List<Long> closedSessions = new ArrayList<>();
+
+    // External listeners
     private List<QMMetaListener> listeners = new ArrayList<>();
+
+    // Temporary event pool
     private List<QMMetaEvent> eventPool = new ArrayList<>();
+    // Sync object
     private final Object historySync = new Object();
+    // History (may be purged when limit reached)
     private List<QMMetaEvent> pastEvents = new ArrayList<>();
     private boolean running = true;
 
@@ -128,10 +136,9 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
 
     public QMMSessionInfo getSessionInfo(DBCExecutionContext context)
     {
-        String contextId = context.getDataSource().getContainer().getId() + ":" + context.getContextName();
-        QMMSessionInfo sessionInfo = sessionMap.get(contextId);
+        QMMSessionInfo sessionInfo = sessionMap.get(context.getContextId());
         if (sessionInfo == null) {
-            log.warn("Can't find sessionInfo meta information: " + contextId);
+            log.debug("Can't find sessionInfo meta information: " + context.getContextId() + " (" + context.getContextName() + ")");
         }
         return sessionInfo;
     }
@@ -146,18 +153,22 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
     @Override
     public synchronized void handleContextOpen(@NotNull DBCExecutionContext context, boolean transactional)
     {
-        String contextId = context.getDataSource().getContainer().getId() + ":" + context.getContextName();
-        QMMSessionInfo session = new QMMSessionInfo(
-            context,
-            transactional,
-            sessionMap.get(contextId));
-        sessionMap.put(contextId, session);
-
-        if (session.getPrevious() != null && !session.getPrevious().isClosed()) {
-            // Is it really a problem? Maybe better to remove warning at all
-            // Happens when we have open connection and perform another connection test
-            log.debug("Previous '" + contextId + "' session wasn't closed");
+        final long contextId = context.getContextId();
+        QMMSessionInfo session = sessionMap.get(contextId);
+        if (session == null) {
+            session = new QMMSessionInfo(
+                context,
+                transactional);
+            sessionMap.put(contextId, session);
+        } else {
+            // This session may already be in cache in case of reconnect/invalidate
+            // (when context closed and reopened without new context object creation)
+            session.reopen();
         }
+
+        // Remove from closed sessions (in case of re-opened connection)
+        closedSessions.remove(contextId);
+        // Notify
         fireMetaEvent(session, QMMetaEvent.Action.BEGIN);
     }
 
@@ -169,6 +180,7 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
             session.close();
             fireMetaEvent(session, QMMetaEvent.Action.END);
         }
+        closedSessions.add(context.getContextId());
     }
 
     @Override
@@ -292,7 +304,13 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
         @Override
         protected IStatus run(DBRProgressMonitor monitor)
         {
-            final List<QMMetaEvent> events = obtainEvents();
+            final List<QMMetaEvent> events;
+            List<Long> sessionsToClose;
+            synchronized (QMMCollectorImpl.this) {
+                events = obtainEvents();
+                sessionsToClose = closedSessions;
+                closedSessions.clear();
+            }
             final List<QMMetaListener> listeners = getListeners();
             if (!listeners.isEmpty() && !events.isEmpty()) {
                 // Dispatch all events
@@ -311,6 +329,17 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
                     pastEvents = new ArrayList<>(pastEvents.subList(
                         size - MAX_HISTORY_EVENTS,
                         size));
+                }
+            }
+            // Cleanup closed sessions
+            synchronized (QMMCollectorImpl.this) {
+                for (Long sessionId : sessionsToClose) {
+                    final QMMSessionInfo session = sessionMap.get(sessionId);
+                    if (session != null && !session.isClosed()) {
+                        // It is possible (rarely) that session was reopened before event dispatcher run
+                        // In that case just ignore it
+                        sessionMap.remove(sessionId);
+                    }
                 }
             }
             if (isRunning()) {

@@ -1,32 +1,34 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.runtime;
 
 import org.eclipse.swt.program.Program;
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.DBeaverCore;
+import org.jkiss.dbeaver.model.access.DBAAuthInfo;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
+import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.*;
+import java.util.Base64;
 
 /**
  * WebUtils
@@ -34,13 +36,13 @@ import java.net.*;
 public class WebUtils {
     private static final Log log = Log.getLog(WebUtils.class);
 
-
-    public static InputStream openConnectionStream(String urlString) throws IOException {
-        URLConnection connection = openConnection(urlString);
-        return connection.getInputStream();
+    @NotNull
+    public static URLConnection openConnection(String urlString) throws IOException {
+        return openConnection(urlString, null);
     }
 
-    public static URLConnection openConnection(String urlString) throws IOException {
+    @NotNull
+    public static URLConnection openConnection(String urlString, DBAAuthInfo authInfo) throws IOException {
 
         log.debug("Open [" + urlString + "]");
 
@@ -65,13 +67,20 @@ public class WebUtils {
             httpConnection.setInstanceFollowRedirects(true);
             connection.setRequestProperty(
                 "User-Agent",  //$NON-NLS-1$
-                DBeaverCore.getProductTitle());
+                GeneralUtils.getProductTitle());
+            if (authInfo != null && !CommonUtils.isEmpty(authInfo.getUserName())) {
+                // Set auth info
+                String encoded = Base64.getEncoder().encodeToString(
+                    (authInfo.getUserName() + ":" + CommonUtils.notEmpty(authInfo.getUserPassword())).getBytes(GeneralUtils.UTF8_CHARSET));
+                connection.setRequestProperty("Authorization", "Basic " + encoded);
+            }
         }
         connection.connect();
         if (connection instanceof HttpURLConnection) {
             final HttpURLConnection httpConnection = (HttpURLConnection) connection;
-            if (httpConnection.getResponseCode() != 200) {
-                throw new IOException("File not found '" + urlString + "': " + httpConnection.getResponseMessage());
+            final int responseCode = httpConnection.getResponseCode();
+            if (responseCode != 200) {
+                throw new IOException("Can't open '" + urlString + "': " + httpConnection.getResponseMessage());
             }
         }
 

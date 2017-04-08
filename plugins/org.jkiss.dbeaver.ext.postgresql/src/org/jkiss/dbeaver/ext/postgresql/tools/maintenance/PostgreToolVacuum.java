@@ -1,20 +1,19 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ext.postgresql.tools.maintenance;
 
@@ -94,13 +93,13 @@ public class PostgreToolVacuum implements IExternalTool
         protected void createControls(Composite parent) {
             Group optionsGroup = UIUtils.createControlGroup(parent, "Options", 1, 0, 0);
             optionsGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            fullCheck = UIUtils.createCheckbox(optionsGroup, "Full", "Selects \"full\" vacuum, which can reclaim more space, but takes much longer and exclusively locks the table. This method also requires extra disk space, since it writes a new copy of the table and doesn't release the old copy until the operation is complete. Usually this should only be used when a significant amount of space needs to be reclaimed from within the table.", false, 0);
+            fullCheck = UIUtils.createCheckbox(optionsGroup, "Full", "Selects \"full\" vacuum, which can reclaim more space, but takes much longer and exclusively locks the table.\nThis method also requires extra disk space, since it writes a new copy of the table and doesn't release the old copy until the operation is complete.\nUsually this should only be used when a significant amount of space needs to be reclaimed from within the table.", false, 0);
             fullCheck.addSelectionListener(SQL_CHANGE_LISTENER);
-            freezeCheck = UIUtils.createCheckbox(optionsGroup, "Freeze", "Selects aggressive \"freezing\" of tuples. Specifying FREEZE is equivalent to performing VACUUM with the vacuum_freeze_min_age and vacuum_freeze_table_age parameters set to zero. Aggressive freezing is always performed when the table is rewritten, so this option is redundant when FULL is specified.", false, 0);
+            freezeCheck = UIUtils.createCheckbox(optionsGroup, "Freeze", "Selects aggressive \"freezing\" of tuples. Specifying FREEZE is equivalent to performing VACUUM with the vacuum_freeze_min_age and vacuum_freeze_table_age parameters set to zero.\nAggressive freezing is always performed when the table is rewritten, so this option is redundant when FULL is specified.", false, 0);
             freezeCheck.addSelectionListener(SQL_CHANGE_LISTENER);
             analyzeCheck = UIUtils.createCheckbox(optionsGroup, "Analyze", "Updates statistics used by the planner to determine the most efficient way to execute a query.", false, 0);
             analyzeCheck.addSelectionListener(SQL_CHANGE_LISTENER);
-            dpsCheck = UIUtils.createCheckbox(optionsGroup, "Disable page skipping", "Normally, VACUUM will skip pages based on the visibility map. Pages where all tuples are known to be frozen can always be skipped, and those where all tuples are known to be visible to all transactions may be skipped except when performing an aggressive vacuum. Furthermore, except when performing an aggressive vacuum, some pages may be skipped in order to avoid waiting for other sessions to finish using them. This option disables all page-skipping behavior, and is intended to be used only the contents of the visibility map are thought to be suspect, which should happen only if there is a hardware or software issue causing database corruption.", false, 0);
+            dpsCheck = UIUtils.createCheckbox(optionsGroup, "Disable page skipping", "Normally, VACUUM will skip pages based on the visibility map.\nPages where all tuples are known to be frozen can always be skipped, and those where all tuples are known to be visible to all transactions may be skipped except when performing an aggressive vacuum.\nFurthermore, except when performing an aggressive vacuum, some pages may be skipped in order to avoid waiting for other sessions to finish using them.\nThis option disables all page-skipping behavior, and is intended to be used only the contents of the visibility map are thought to be suspect, which should happen only if there is a hardware or software issue causing database corruption.", false, 0);
             dpsCheck.addSelectionListener(SQL_CHANGE_LISTENER);
 
             createObjectsSelector(parent);

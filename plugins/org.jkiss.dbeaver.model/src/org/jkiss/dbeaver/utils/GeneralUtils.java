@@ -1,44 +1,45 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.utils;
 
-import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.MultiStatus;
-import org.eclipse.core.runtime.Platform;
-import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.*;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ModelPreferences;
+import org.jkiss.dbeaver.bundle.ModelActivator;
 import org.jkiss.utils.Base64;
 import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.StandardConstants;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.Version;
 
 import java.io.*;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.Charset;
 import java.text.NumberFormat;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.StringTokenizer;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -55,6 +56,11 @@ public class GeneralUtils {
     public static final Charset UTF8_CHARSET = Charset.forName(UTF8_ENCODING);
     public static final Charset DEFAULT_FILE_CHARSET = UTF8_CHARSET;
     public static final Charset ASCII_CHARSET = Charset.forName("US-ASCII");
+
+    private static final String METADATA_FOLDER = ".metadata";
+
+    public static final String DEFAULT_TIMESTAMP_PATTERN = "yyyyMMddHHmm";
+    public static final String DEFAULT_DATE_PATTERN = "yyyyMMdd";
 
     public static final String[] byteToHex = new String[256];
     public static final char[] nibbleToHex = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
@@ -250,12 +256,70 @@ public class GeneralUtils {
         }
     }
 
+    @NotNull
     public static IStatus makeInfoStatus(String message) {
         return new Status(
             IStatus.INFO,
             ModelPreferences.PLUGIN_ID,
             message,
             null);
+    }
+
+    @NotNull
+    public static String getProductTitle()
+    {
+        return getProductName() + " " + getProductVersion();
+    }
+
+    @NotNull
+    public static String getProductName()
+    {
+        final IProduct product = Platform.getProduct();
+        if (product == null) {
+            return "DBeaver";
+        }
+        return product.getName();
+    }
+
+    @NotNull
+    public static Version getProductVersion()
+    {
+        final IProduct product = Platform.getProduct();
+        if (product == null) {
+            return ModelActivator.getInstance().getBundle().getVersion();
+        }
+        return product.getDefiningBundle().getVersion();
+    }
+
+    @NotNull
+    public static Date getProductReleaseDate() {
+        final IProduct product = Platform.getProduct();
+        if (product != null) {
+            Bundle definingBundle = product.getDefiningBundle();
+            final Dictionary<String, String> headers = definingBundle.getHeaders();
+            final String releaseDate = headers.get("Bundle-Release-Date");
+            if (releaseDate != null) {
+                try {
+                    return new SimpleDateFormat(DEFAULT_DATE_PATTERN).parse(releaseDate);
+                } catch (ParseException e) {
+                    log.debug(e);
+                }
+            }
+            final String buildTime = headers.get("Build-Time");
+            if (buildTime != null) {
+                try {
+                    return new SimpleDateFormat(DEFAULT_TIMESTAMP_PATTERN).parse(buildTime);
+                } catch (ParseException e) {
+                    log.debug(e);
+                }
+            }
+        }
+        // Failed to get valid date from product bundle
+        final Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.YEAR, 2017);
+        calendar.set(Calendar.MONTH, 0);
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
+        return calendar.getTime();
     }
 
     public interface IVariableResolver {
@@ -276,11 +340,13 @@ public class GeneralUtils {
         }
     }
 
+    @NotNull
     public static String variablePattern(String name) {
         return "${" + name + "}";
     }
 
-    public static String replaceVariables(String string, IVariableResolver resolver) {
+    @NotNull
+    public static String replaceVariables(@NotNull String string, IVariableResolver resolver) {
         try {
             Matcher matcher = VAR_PATTERN.matcher(string);
             int pos = 0;
@@ -435,7 +501,21 @@ public class GeneralUtils {
     }
 
     public static File getMetadataFolder() {
-        return Platform.getLogFileLocation().toFile().getParentFile();
+        final URL workspaceURL = Platform.getInstanceLocation().getURL();
+        File metaDir = getMetadataFolder(new File(workspaceURL.getPath()));
+        if (!metaDir.exists() && !metaDir.mkdir()) {
+            return Platform.getLogFileLocation().toFile().getParentFile();
+        }
+        return metaDir;
+    }
+
+    public static File getMetadataFolder(File workspaceFolder) {
+        return new File(workspaceFolder, METADATA_FOLDER);
+    }
+
+    @NotNull
+    public static URI makeURIFromFilePath(@NotNull String path) throws URISyntaxException {
+        return new URI(path.replace(" ", "%20"));
     }
 
 }

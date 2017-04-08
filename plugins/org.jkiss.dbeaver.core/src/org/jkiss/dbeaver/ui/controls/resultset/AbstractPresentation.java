@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.controls.resultset;
@@ -24,11 +23,16 @@ import org.eclipse.jface.action.MenuManager;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.events.DisposeEvent;
 import org.eclipse.swt.events.DisposeListener;
+import org.eclipse.swt.events.FocusEvent;
+import org.eclipse.swt.events.FocusListener;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.ui.IWorkbenchPartSite;
+import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.contexts.IContextActivation;
+import org.eclipse.ui.contexts.IContextService;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
 import org.jkiss.dbeaver.ui.UIUtils;
@@ -42,6 +46,7 @@ import java.util.List;
 public abstract class AbstractPresentation implements IResultSetPresentation, ISelectionProvider {
 
     private static final String PRESENTATION_CONTROL_ID = "org.jkiss.dbeaver.ui.resultset.presentation";
+    //public static final String RESULTS_CONTROL_CONTEXT_ID = "org.jkiss.dbeaver.ui.context.resultset.focused";
     public static final StructuredSelection EMPTY_SELECTION = new StructuredSelection();
 
     @NotNull
@@ -145,6 +150,25 @@ public abstract class AbstractPresentation implements IResultSetPresentation, IS
         final Control control = getControl();
         final IWorkbenchPartSite site = controller.getSite();
         UIUtils.addFocusTracker(site, PRESENTATION_CONTROL_ID, control);
+
+/*
+        final IContextService contextService = site.getService(IContextService.class);
+        if (contextService != null) {
+            control.addFocusListener(new FocusListener() {
+                IContextActivation activation;
+                @Override
+                public void focusGained(FocusEvent e) {
+                    if (activation == null) {
+                        activation = contextService.activateContext(RESULTS_CONTROL_CONTEXT_ID);
+                    }
+                }
+                @Override
+                public void focusLost(FocusEvent e) {
+                    contextService.deactivateContext(activation);
+                }
+            });
+        }
+*/
         control.addDisposeListener(new DisposeListener() {
             @Override
             public void widgetDisposed(DisposeEvent e) {

@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.registry;
 
@@ -82,6 +81,7 @@ public class DataSourceDescriptor
             this.typeName = typeName;
         }
 
+        // Copy constructor
         FilterMapping(FilterMapping mapping)
         {
             this.typeName = mapping.typeName;
@@ -100,12 +100,24 @@ public class DataSourceDescriptor
             if (!customFilters.isEmpty()) {
                 String objectID = DBUtils.getObjectUniqueName(parentObject);
                 DBSObjectFilter filter = customFilters.get(objectID);
-                if ((filter != null && filter.isEnabled()) || firstMatch) {
+                if ((filter != null && !filter.isNotApplicable()) || firstMatch) {
                     return filter;
                 }
             }
 
             return firstMatch ? null : defaultFilter;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (!(obj instanceof FilterMapping)) {
+                return false;
+            }
+            FilterMapping source = (FilterMapping)obj;
+            return
+                CommonUtils.equalObjects(typeName, source.typeName) &&
+                CommonUtils.equalObjects(defaultFilter, source.defaultFilter) &&
+                CommonUtils.equalObjects(customFilters, source.customFilters);
         }
     }
 
@@ -127,16 +139,18 @@ public class DataSourceDescriptor
     private boolean showUtilityObjects;
     private boolean connectionReadOnly;
     private final Map<String, FilterMapping> filterMap = new HashMap<>();
-    private Date createDate;
-    private Date updateDate;
-    private Date loginDate;
     private DBDDataFormatterProfile formatterProfile;
+    @Nullable
     private DBPClientHome clientHome;
+    @Nullable
+    private String lockPasswordHash;
+    @Nullable
+    private DataSourceFolder folder;
+
+    @NotNull
     private DataSourcePreferenceStore preferenceStore;
     @Nullable
     private DBPDataSource dataSource;
-    @Nullable
-    private String lockPasswordHash;
 
     private final List<DBPDataSourceUser> users = new ArrayList<>();
 
@@ -146,7 +160,6 @@ public class DataSourceDescriptor
     private volatile boolean connecting = false;
     private final List<DBRProcessDescriptor> childProcesses = new ArrayList<>();
     private DBWTunnel tunnel;
-    private DataSourceFolder folder;
     @NotNull
     private final DBVModel virtualModel;
 
@@ -171,11 +184,11 @@ public class DataSourceDescriptor
         this.id = id;
         this.driver = driver;
         this.connectionInfo = connectionInfo;
-        this.createDate = new Date();
         this.preferenceStore = new DataSourcePreferenceStore(this);
         this.virtualModel = new DBVModel(this);
     }
 
+    // Copy constructor
     public DataSourceDescriptor(@NotNull DataSourceDescriptor source)
     {
         this.registry = source.registry;
@@ -189,17 +202,18 @@ public class DataSourceDescriptor
         this.connectionReadOnly = source.connectionReadOnly;
         this.driver = source.driver;
         this.connectionInfo = source.connectionInfo;
-        this.createDate = source.createDate;
-        this.preferenceStore = source.preferenceStore;
         this.formatterProfile = source.formatterProfile;
         this.clientHome = source.clientHome;
-        this.virtualModel = source.virtualModel;
 
         this.connectionInfo = new DBPConnectionConfiguration(source.connectionInfo);
-        this.tunnelConnectionInfo = source.tunnelConnectionInfo == null ? null : new DBPConnectionConfiguration(source.tunnelConnectionInfo);
-        this.filterMap.putAll(source.filterMap);
+        for (Map.Entry<String, FilterMapping> fe : source.filterMap.entrySet()) {
+            this.filterMap.put(fe.getKey(), new FilterMapping(fe.getValue()));
+        }
         this.lockPasswordHash = source.lockPasswordHash;
         this.folder = source.folder;
+
+        this.preferenceStore = new DataSourcePreferenceStore(this);
+        this.virtualModel = new DBVModel(this, source.virtualModel);
     }
 
     public boolean isDisposed()
@@ -223,6 +237,10 @@ public class DataSourceDescriptor
     @Override
     public String getId() {
         return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
     }
 
     @NotNull
@@ -457,7 +475,9 @@ public class DataSourceDescriptor
             }
             if (filterMapping != null) {
                 filter = filterMapping.getFilter(parentObject, firstMatch);
-                if (filter != null && (firstMatch || filter.isEnabled())) return filterMapping;
+                if (filter != null && (firstMatch || !filter.isNotApplicable())) {
+                    return filterMapping;
+                }
             }
         }
 
@@ -560,36 +580,6 @@ public class DataSourceDescriptor
         this.description = description;
     }
 
-    public Date getCreateDate()
-    {
-        return createDate;
-    }
-
-    public void setCreateDate(Date createDate)
-    {
-        this.createDate = createDate;
-    }
-
-    public Date getUpdateDate()
-    {
-        return updateDate;
-    }
-
-    public void setUpdateDate(Date updateDate)
-    {
-        this.updateDate = updateDate;
-    }
-
-    public Date getLoginDate()
-    {
-        return loginDate;
-    }
-
-    public void setLoginDate(Date loginDate)
-    {
-        this.loginDate = loginDate;
-    }
-
     public Date getConnectTime() {
         return connectTime;
     }
@@ -668,21 +658,13 @@ public class DataSourceDescriptor
         }
         log.debug("Connect with '" + getName() + "' (" + getId() + ")");
 
-        final String oldName = getConnectionConfiguration().getUserName();
-        final String oldPassword = getConnectionConfiguration().getUserPassword();
+        //final String oldName = getConnectionConfiguration().getUserName();
+        //final String oldPassword = getConnectionConfiguration().getUserPassword();
         if (!isSavePassword()) {
             // Ask for password
             if (!DataSourceHandler.askForPassword(this, null)) {
                 DataSourceHandler.updateDataSourceObject(this);
                 return false;
-            }
-        }
-        for (DBWHandlerConfiguration handler : getConnectionConfiguration().getDeclaredHandlers()) {
-            if (handler.isEnabled() && handler.isSecured() && !handler.isSavePassword()) {
-                if (!DataSourceHandler.askForPassword(this, handler)) {
-                    DataSourceHandler.updateDataSourceObject(this);
-                    return false;
-                }
             }
         }
 
@@ -707,6 +689,25 @@ public class DataSourceDescriptor
                 monitor.subTask("Initialize tunnel");
                 tunnel = tunnelConfiguration.createHandler(DBWTunnel.class);
                 try {
+                    if (!tunnelConfiguration.isSavePassword() && tunnel.needsPassword(tunnelConfiguration)) {
+                        if (!DataSourceHandler.askForPassword(this, tunnelConfiguration)) {
+                            DataSourceHandler.updateDataSourceObject(this);
+                            tunnel = null;
+                            return false;
+                        }
+                    }
+
+/*
+                    for (DBWHandlerConfiguration handler : getConnectionConfiguration().getDeclaredHandlers()) {
+                        if (handler.isEnabled() && handler.isSecured() && !handler.isSavePassword()) {
+                            if (!DataSourceHandler.askForPassword(this, handler)) {
+                                DataSourceHandler.updateDataSourceObject(this);
+                                return false;
+                            }
+                        }
+                    }
+*/
+
                     tunnelConnectionInfo = tunnel.initializeTunnel(monitor, registry.getPlatform(), tunnelConfiguration, connectionInfo);
                 } catch (Exception e) {
                     throw new DBCException("Can't initialize tunnel", e);
@@ -732,7 +733,6 @@ public class DataSourceDescriptor
 
             connectFailed = false;
             connectTime = new Date();
-            loginDate = connectTime;
 
             processEvents(monitor, DBPConnectionEventType.AFTER_CONNECT);
 
@@ -742,7 +742,11 @@ public class DataSourceDescriptor
                     DataSourceDescriptor.this,
                     true));
             }
-            log.debug("Connected (" + getId() + ")");
+            try {
+                log.debug("Connected (" + getId() + ", " + getPropertyDriver() + ")");
+            } catch (Throwable e) {
+                log.debug("Connected (" + getId() + ", driver unknown)");
+            }
             return true;
         } catch (Exception e) {
             log.debug("Connection failed (" + getId() + ")");
@@ -805,7 +809,7 @@ public class DataSourceDescriptor
         DBRShellCommand command = info.getEvent(eventType);
         if (command != null && command.isEnabled()) {
             Map<String, Object> variables = new HashMap<>();
-            for (Map.Entry<Object, Object> entry : info.getProperties().entrySet()) {
+            for (Map.Entry<String, String> entry : info.getProperties().entrySet()) {
                 variables.put(CommonUtils.toString(entry.getKey()), entry.getValue());
             }
             variables.put(RegistryConstants.VARIABLE_HOST, info.getHostName());
@@ -820,7 +824,11 @@ public class DataSourceDescriptor
             monitor.subTask("Execute process " + processDescriptor.getName());
             DBUserInterface.getInstance().executeProcess(processDescriptor);
             if (command.isWaitProcessFinish()) {
-                processDescriptor.waitFor();
+                if (command.getWaitProcessTimeoutMs() >= 0) {
+                    processDescriptor.waitFor(command.getWaitProcessTimeoutMs());
+                } else {
+                    processDescriptor.waitFor();
+                }
             }
             addChildProcess(processDescriptor);
         }
@@ -847,50 +855,9 @@ public class DataSourceDescriptor
 
         connecting = true;
         try {
-            {
-                List<DBPDataSourceUser> usersStamp;
-                synchronized (users) {
-                    usersStamp = new ArrayList<>(users);
-                }
-                int jobCount = 0;
-                // Save all unsaved data
-                for (DBPDataSourceUser user : usersStamp) {
-                    if (user instanceof Job) {
-                        jobCount++;
-                    }
-                    if (user instanceof DBPDataSourceHandler) {
-                        ((DBPDataSourceHandler) user).beforeDisconnect();
-                    }
-                }
-                if (jobCount > 0) {
-                    monitor.beginTask("Waiting for all active tasks to finish", jobCount);
-                    // Stop all jobs
-                    for (DBPDataSourceUser user : usersStamp) {
-                        if (user instanceof Job) {
-                            Job job = (Job) user;
-                            monitor.subTask("Stop '" + job.getName() + "'");
-                            if (job.getState() == Job.RUNNING) {
-                                job.cancel();
-                                try {
-                                    // Wait for 3 seconds
-                                    for (int i = 0; i < 10; i++) {
-                                        Thread.sleep(300);
-                                        if (job.getState() != Job.RUNNING) {
-                                            break;
-                                        }
-                                    }
-                                } catch (InterruptedException e) {
-                                    // its ok, do nothing
-                                }
-                            }
-                            monitor.worked(1);
-                        }
-                    }
-                    monitor.done();
-                }
-            }
+            releaseDataSourceUsers(monitor);
 
-            monitor.beginTask("Disconnect from '" + getName() + "'", 6);
+            monitor.beginTask("Disconnect from '" + getName() + "'", 5 + dataSource.getAllContexts().length);
 
             processEvents(monitor, DBPConnectionEventType.BEFORE_DISCONNECT);
 
@@ -899,7 +866,7 @@ public class DataSourceDescriptor
             // Close datasource
             monitor.subTask("Close connection");
             if (dataSource != null) {
-                dataSource.close();
+                dataSource.shutdown(monitor);
             }
             monitor.worked(1);
 
@@ -908,10 +875,8 @@ public class DataSourceDescriptor
                 monitor.subTask("Close tunnel");
                 try {
                     tunnel.closeTunnel(monitor);
-                } catch (Exception e) {
-                    log.warn("Error closing tunnel", e);
-                } finally {
-                    this.tunnel = null;
+                } catch (Throwable e) {
+                    log.error("Error closing tunnel", e);
                 }
             }
             monitor.worked(1);
@@ -947,6 +912,51 @@ public class DataSourceDescriptor
             return true;
         } finally {
             connecting = false;
+            log.debug("Disconnected (" + getId() + ")");
+        }
+    }
+
+    private void releaseDataSourceUsers(DBRProgressMonitor monitor) {
+        List<DBPDataSourceUser> usersStamp;
+        synchronized (users) {
+            usersStamp = new ArrayList<>(users);
+        }
+
+        int jobCount = 0;
+        // Save all unsaved data
+        for (DBPDataSourceUser user : usersStamp) {
+            if (user instanceof Job) {
+                jobCount++;
+            }
+            if (user instanceof DBPDataSourceHandler) {
+                ((DBPDataSourceHandler) user).beforeDisconnect();
+            }
+        }
+        if (jobCount > 0) {
+            monitor.beginTask("Waiting for all active tasks to finish", jobCount);
+            // Stop all jobs
+            for (DBPDataSourceUser user : usersStamp) {
+                if (user instanceof Job) {
+                    Job job = (Job) user;
+                    monitor.subTask("Stop '" + job.getName() + "'");
+                    if (job.getState() == Job.RUNNING) {
+                        job.cancel();
+                        try {
+                            // Wait for 3 seconds
+                            for (int i = 0; i < 30; i++) {
+                                Thread.sleep(100);
+                                if (job.getState() != Job.RUNNING) {
+                                    break;
+                                }
+                            }
+                        } catch (InterruptedException e) {
+                            // its ok, do nothing
+                        }
+                    }
+                    monitor.worked(1);
+                }
+            }
+            monitor.done();
         }
     }
 
@@ -1205,6 +1215,27 @@ public class DataSourceDescriptor
     @Override
     public String toString() {
         return name + " [" + driver + "]";
+    }
+
+    public boolean equalSettings(Object obj) {
+        if (!(obj instanceof DataSourceDescriptor)) {
+            return false;
+        }
+        DataSourceDescriptor source = (DataSourceDescriptor) obj;
+        return 
+            CommonUtils.equalObjects(this.name, source.name) &&
+            CommonUtils.equalObjects(this.description, source.description) &&
+            CommonUtils.equalObjects(this.savePassword, source.savePassword) &&
+            CommonUtils.equalObjects(this.showSystemObjects, source.showSystemObjects) &&
+            CommonUtils.equalObjects(this.showUtilityObjects, source.showUtilityObjects) &&
+            CommonUtils.equalObjects(this.connectionReadOnly, source.connectionReadOnly) &&
+            CommonUtils.equalObjects(this.driver, source.driver) &&
+            CommonUtils.equalObjects(this.connectionInfo, source.connectionInfo) &&
+            CommonUtils.equalObjects(this.filterMap, source.filterMap) &&
+            CommonUtils.equalObjects(this.formatterProfile, source.formatterProfile) &&
+            CommonUtils.equalObjects(this.clientHome, source.clientHome) &&
+            CommonUtils.equalObjects(this.lockPasswordHash, source.lockPasswordHash) &&
+            CommonUtils.equalObjects(this.folder, source.folder);
     }
 
     public static class ContextInfo implements DBPObject {

@@ -1,26 +1,23 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.core.application.about;
 
 import org.eclipse.core.runtime.IProduct;
 import org.eclipse.core.runtime.Platform;
-import org.eclipse.jface.dialogs.Dialog;
-import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.resource.JFaceColors;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.BusyIndicator;
@@ -39,14 +36,17 @@ import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.handlers.IHandlerService;
 import org.eclipse.ui.plugin.AbstractUIPlugin;
 import org.jkiss.dbeaver.core.CoreMessages;
-import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.core.application.DBeaverApplication;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.dialogs.InformationDialog;
+import org.jkiss.dbeaver.utils.GeneralUtils;
+
+import java.text.DateFormat;
 
 /**
  * About box
  */
-public class AboutBoxDialog extends Dialog
+public class AboutBoxDialog extends InformationDialog
 {
     public static final String PRODUCT_PROP_SUB_TITLE = "subTitle"; //$NON-NLS-1$
     public static final String PRODUCT_PROP_COPYRIGHT = "copyright"; //$NON-NLS-1$
@@ -61,6 +61,11 @@ public class AboutBoxDialog extends Dialog
         super(shell);
         NAME_FONT = new Font(shell.getDisplay(), CoreMessages.dialog_about_font, 20, SWT.BOLD);
         TITLE_FONT = new Font(shell.getDisplay(), CoreMessages.dialog_about_font, 10, SWT.NORMAL);
+    }
+
+    @Override
+    protected boolean isBanner() {
+        return true;
     }
 
     @Override
@@ -99,7 +104,6 @@ public class AboutBoxDialog extends Dialog
         GridData gd;
 
         IProduct product = Platform.getProduct();
-        String productVersion = DBeaverCore.getVersion().toString();
 
         {
             Label nameLabel = new Label(group, SWT.NONE);
@@ -152,10 +156,17 @@ public class AboutBoxDialog extends Dialog
 
         Label versionLabel = new Label(group, SWT.NONE);
         versionLabel.setBackground(background);
-        versionLabel.setText(CoreMessages.dialog_about_label_version + productVersion);
+        versionLabel.setText(CoreMessages.dialog_about_label_version + GeneralUtils.getProductVersion().toString());
         gd = new GridData(GridData.FILL_HORIZONTAL);
         gd.horizontalAlignment = GridData.CENTER;
         versionLabel.setLayoutData(gd);
+
+        Label releaseTimeLabel = new Label(group, SWT.NONE);
+        releaseTimeLabel.setBackground(background);
+        releaseTimeLabel.setText(DateFormat.getDateInstance(DateFormat.LONG).format(GeneralUtils.getProductReleaseDate()));
+        gd = new GridData(GridData.FILL_HORIZONTAL);
+        gd.horizontalAlignment = GridData.CENTER;
+        releaseTimeLabel.setLayoutData(gd);
 
         Label authorLabel = new Label(group, SWT.NONE);
         authorLabel.setBackground(background);
@@ -175,32 +186,7 @@ public class AboutBoxDialog extends Dialog
         gd.horizontalAlignment = GridData.CENTER;
         siteLink.setLayoutData(gd);
 
-        Link emailLink = UIUtils.createLink(group, UIUtils.makeAnchor(product.getProperty(PRODUCT_PROP_EMAIL)), new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                UIUtils.launchProgram("mailto:" + e.text); //$NON-NLS-1$
-            }
-        });
-        emailLink.setBackground(background);
-        gd = new GridData();
-        gd.horizontalAlignment = GridData.CENTER;
-        emailLink.setLayoutData(gd);
-
         return parent;
-    }
-
-    @Override
-    protected void createButtonsForButtonBar(Composite parent) {
-        GridData gd = new GridData(GridData.FILL_HORIZONTAL);
-        gd.horizontalAlignment = GridData.CENTER; 
-        parent.setLayoutData(gd);
-        parent.setBackground(JFaceColors.getBannerBackground(parent.getDisplay()));
-        Button button = createButton(
-            parent,
-            IDialogConstants.OK_ID,
-            IDialogConstants.OK_LABEL,
-            true);
-        button.setFocus();
     }
 
 }

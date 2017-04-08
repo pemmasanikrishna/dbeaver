@@ -1,19 +1,18 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.jkiss.dbeaver.ui.editors.sql.indent;
@@ -71,7 +70,7 @@ public class SQLIndenter {
      * @return a String which reflects the indentation at the line in which the reference position to
      *         <code>offset</code> resides, or <code>null</code> if it cannot be determined
      */
-    public StringBuilder getReferenceIndentation(int offset)
+    public String getReferenceIndentation(int offset)
     {
         int unit;
         unit = findReferencePosition(offset);
@@ -90,7 +89,7 @@ public class SQLIndenter {
      * @return a String which reflects the correct indentation for the line in which offset resides, or
      *         <code>null</code> if it cannot be determined
      */
-    public StringBuilder computeIndentation(int offset)
+    public String computeIndentation(int offset)
     {
         return computeIndentation(offset, false);
 
@@ -104,7 +103,7 @@ public class SQLIndenter {
      * @return a String which reflects the correct indentation for the line in which offset resides, or
      *         <code>null</code> if it cannot be determined
      */
-    public StringBuilder computeIndentation(int offset, boolean assumeOpening)
+    public String computeIndentation(int offset, boolean assumeOpening)
     {
 
         indent = 1;
@@ -123,7 +122,7 @@ public class SQLIndenter {
         //adding offset, after adding indent to keep consistency on whitespace of the last line.
         indent.append(getReferenceIndentation(offset));
 
-        return indent;
+        return indent.toString();
     }
 
     /**
@@ -133,19 +132,17 @@ public class SQLIndenter {
      * @param offset the offset in the document
      * @return the indentation (leading whitespace) of the line in which <code>offset</code> is located
      */
-    private StringBuilder getLeadingWhitespace(int offset)
+    private String getLeadingWhitespace(int offset)
     {
-        StringBuilder indent = new StringBuilder();
         try {
             IRegion line = document.getLineInformationOfOffset(offset);
             int lineOffset = line.getOffset();
             int nonWS = scanner.findNonWhitespaceForwardInAnyPartition(lineOffset, lineOffset + line.getLength());
-            indent.append(document.get(lineOffset, nonWS - lineOffset));
-            return indent;
+            return document.get(lineOffset, nonWS - lineOffset);
         }
         catch (BadLocationException e) {
 //            _log.debug(EditorMessages.error_badLocationException, e);
-            return indent;
+            return "";
         }
     }
 
@@ -196,8 +193,6 @@ public class SQLIndenter {
 
     /**
      * Returns the reference position regarding to indentation for <code>offset</code>, or <code>NOT_FOUND</code>.
-     * This method calls {@link #findReferencePosition(int, int) findReferencePosition(offset, nextChar)}where
-     * <code>nextChar</code> is the next character after <code>offset</code>.
      *
      * @param offset the offset for which the reference is computed
      * @return the reference statement relative to which <code>offset</code> should be indented, or
@@ -215,8 +210,7 @@ public class SQLIndenter {
      * Returns the reference position for a list element. The algorithm tries to match any previous indentation on the
      * same list. If there is none, the reference position returned is determined depending on the type of list: The
      * indentation will either match the list scope introducer (e.g. for method declarations), so called deep indents,
-     * or simply increase the indentation by a number of standard indents. See also
-     * {@link #handleScopeIntroduction(int)}.
+     * or simply increase the indentation by a number of standard indents.
      *
      * @return the reference position for a list item: either a previous list item that has its own indentation, or the
      *         list introduction start.

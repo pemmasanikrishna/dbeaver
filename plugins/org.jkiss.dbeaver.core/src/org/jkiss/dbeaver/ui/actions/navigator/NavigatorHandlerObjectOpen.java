@@ -1,26 +1,24 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2016 Serge Rieder (serge@jkiss.org)
+ * Copyright (C) 2010-2017 Serge Rider (serge@jkiss.org)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (version 2)
- * as published by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.jkiss.dbeaver.ui.actions.navigator;
 
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.resources.IResource;
-import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.ISelectionProvider;
 import org.eclipse.jface.viewers.IStructuredSelection;
@@ -46,14 +44,10 @@ import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.jkiss.dbeaver.registry.DataSourceDescriptor;
 import org.jkiss.dbeaver.registry.editor.EntityEditorsRegistry;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.actions.datasource.DataSourceHandler;
 import org.jkiss.dbeaver.ui.controls.folders.ITabbedFolderContainer;
 import org.jkiss.dbeaver.ui.dialogs.connection.EditConnectionDialog;
 import org.jkiss.dbeaver.ui.dialogs.connection.EditConnectionWizard;
-import org.jkiss.dbeaver.ui.editors.DatabaseEditorInput;
-import org.jkiss.dbeaver.ui.editors.DatabaseEditorInputFactory;
-import org.jkiss.dbeaver.ui.editors.EditorUtils;
-import org.jkiss.dbeaver.ui.editors.INavigatorEditorInput;
+import org.jkiss.dbeaver.ui.editors.*;
 import org.jkiss.dbeaver.ui.editors.entity.EntityEditor;
 import org.jkiss.dbeaver.ui.editors.entity.EntityEditorInput;
 import org.jkiss.dbeaver.ui.editors.entity.FolderEditor;
@@ -158,17 +152,25 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
                     IEditorInput editorInput;
                     try {
                         editorInput = ref.getEditorInput();
-                    } catch (PartInitException e) {
+                    } catch (Throwable e) {
                         continue;
                     }
-                    if (editorInput instanceof INavigatorEditorInput && ((INavigatorEditorInput) editorInput).getNavigatorNode() == selectedNode) {
-                        final IEditorPart editor = ref.getEditor(true);
-                        if (editor instanceof ITabbedFolderContainer && defaultFolderId != null) {
-                            // Activate default folder
-                            ((ITabbedFolderContainer)editor).switchFolder(defaultFolderId);
+                    if (editorInput instanceof INavigatorEditorInput) {
+                        boolean matches;
+                        if (editorInput instanceof DatabaseLazyEditorInput) {
+                            matches = selectedNode.getNodeItemPath().equals(((DatabaseLazyEditorInput) editorInput).getNodePath());
+                        } else {
+                            matches = ((INavigatorEditorInput) editorInput).getNavigatorNode() == selectedNode;
                         }
-                        workbenchWindow.getActivePage().activate(editor);
-                        return editor;
+                        if (matches) {
+                            final IEditorPart editor = ref.getEditor(true);
+                            if (editor instanceof ITabbedFolderContainer && defaultFolderId != null) {
+                                // Activate default folder
+                                ((ITabbedFolderContainer) editor).switchFolder(defaultFolderId);
+                            }
+                            workbenchWindow.getActivePage().activate(editor);
+                            return editor;
+                        }
                     }
                 }
             }
@@ -232,17 +234,7 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
         EditConnectionDialog dialog = new EditConnectionDialog(
             workbenchWindow,
             new EditConnectionWizard(dataSourceContainer));
-        if (dialog.open() == IDialogConstants.OK_ID) {
-            if (dataSourceContainer.isConnected()) {
-                if (UIUtils.confirmAction(
-                    workbenchWindow.getShell(),
-                    "Connection changed",
-                    "Connection '" + dataSourceContainer.getName() + "' has been changed.\nDo you want to reconnect?"))
-                {
-                    DataSourceHandler.reconnectDataSource(null, dataSourceContainer);
-                }
-            }
-        }
+        dialog.open();
     }
 
     public static void openResourceEditor(IWorkbenchWindow workbenchWindow, ResourceUtils.ResourceInfo resourceInfo) {
@@ -279,10 +271,12 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
                     actionName = CoreMessages.actions_navigator_edit;
                 } else if (node instanceof DBNDatabaseNode) {
                     DBSObject object = ((DBNDatabaseNode) node).getObject();
-                    DBEObjectEditor objectManager = EntityEditorsRegistry.getInstance().getObjectManager(
-                        object.getClass(),
-                        DBEObjectEditor.class);
-                    actionName = objectManager == null || !objectManager.canEditObject(object)? CoreMessages.actions_navigator_view : CoreMessages.actions_navigator_edit;
+                    if (object != null) {
+                        DBEObjectEditor objectManager = EntityEditorsRegistry.getInstance().getObjectManager(
+                            object.getClass(),
+                            DBEObjectEditor.class);
+                        actionName = objectManager == null || !objectManager.canEditObject(object) ? CoreMessages.actions_navigator_view : CoreMessages.actions_navigator_edit;
+                    }
                 }
                 String label;
                 if (selection instanceof IStructuredSelection && ((IStructuredSelection) selection).size() > 1) {
